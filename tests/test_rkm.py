@@ -233,6 +233,34 @@ class RkmTest(unittest.TestCase):
         self.assertIn("todos/a", out)
         self.assertNotIn("todos/b", out)
 
+    def test_ls_columns(self):
+        self.new_todo("a")
+        self.repo.run("new", "spec", "a-much-longer-spec", "--title", "S", "--description", "d",
+                      "--draft")
+        self.repo.run("new", "spec", "settled", "--title", "T", "--description", "d")
+        rows = self.repo.run("ls").splitlines()
+        self.assertEqual(len(rows), 3)  # piped: no header
+        line = {r.split()[0]: r.split()[2:] for r in rows}
+        title = {"todos/a": "Do A", "spec/a-much-longer-spec": "S", "spec/settled": "T"}
+        starts = {r.rindex(title[r.split()[0]]) for r in rows}
+        self.assertEqual(len(starts), 1)  # titles line up
+        self.assertEqual(line["todos/a"][0], "open")
+        self.assertEqual(line["spec/a-much-longer-spec"], ["draft", "S"])
+        self.assertEqual(line["spec/settled"], ["T"])  # stable is not shown
+
+    def test_ls_header_on_tty(self):
+        import pty
+        self.new_todo("a")
+        leader, follower = pty.openpty()
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "RKM_ACTOR")}
+        env.update(RKM_ROOT=self.repo.root, RKM_NOW=NOW)
+        subprocess.run([sys.executable, "-I", RKM, "ls"], env=env, stdout=follower, check=True)
+        out = os.read(leader, 65536).decode()  # macOS drops it once the follower closes
+        os.close(follower)
+        os.close(leader)
+        self.assertRegex(out.splitlines()[0], r"^ID +TYPE +STATE +TITLE")
+        self.assertIn("todos/a", out.splitlines()[1])
+
 
 def source(path):
     with open(path, encoding="utf-8") as f:

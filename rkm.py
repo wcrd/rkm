@@ -812,9 +812,17 @@ def cmd_ls(a):
         print(json.dumps([{"id": d.id, **{k: v for k, v in d.values.items()}} for d in rows],
                          ensure_ascii=False, indent=1))
         return
-    for d in rows:
-        flag = d.get("state") or d.get("status") or ""
-        print(f"{d.id:55} {d.get('type', ''):9} {flag:10} {d.get('title', '')}")
+    # STATE is the tracked state plus any status but the default `stable`,
+    # so drafts and deprecations stand out. The header is for a person
+    # reading a terminal; piped output stays rows only, for grep and awk.
+    table = [(d.id, d.get("type", ""),
+              " ".join(f for f in (d.get("state"), d.get("status")) if f and f != "stable"),
+              d.get("title", "")) for d in rows]
+    if rows and sys.stdout.isatty():
+        table.insert(0, ("ID", "TYPE", "STATE", "TITLE"))
+    widths = [max((len(r[i]) for r in table), default=0) for i in range(3)]
+    for r in table:
+        print("  ".join(c.ljust(w) for c, w in zip(r, widths)), r[3], sep="  ")
 
 
 def cmd_index(a):

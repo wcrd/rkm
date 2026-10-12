@@ -16,3 +16,5 @@ First release. Needs Python 3.11+
 - `conventions` prints the rules as a section for `AGENTS.md`, with the
   bundle's own types.
 - The repository is found from `RKM_ROOT` or the current directory upwards.
+- `ls` sizes its columns to fit and prints a header in a terminal (none when
+  piped). STATE shows a status only when it isn't `stable`.

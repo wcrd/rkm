@@ -59,6 +59,99 @@ Paste it in; `rkm conventions` prints it again. Bring existing notes in with
 `rkm adopt <path> <kind>`: a file outside `rkm/` moves in, and links to it
 are rewritten.
 
+## Optional separate knowledge history
+
+Save a global parent directory for RKM knowledge workspaces once:
+
+```bash
+rkm config --workspace-root /your/chosen/rkm-workspaces
+rkm config                       # show the preference and its config file
+```
+
+This is stored in `~/.config/rkm/config.toml`, or
+`$XDG_CONFIG_HOME/rkm/config.toml` when set, separately from the uv tool
+installation. Only RKM knowledge workspaces use it. Each repository/clone
+gets a subdirectory named `<repo>-<identifier>` to avoid collisions between
+same-named repositories. All code workspaces belonging to one repository
+share its saved knowledge location. Changing or clearing the global setting
+does not move any existing workspace. Clear it with
+`rkm config --unset-workspace-root`.
+
+The default remains an in-tree `rkm/` bundle. To keep knowledge out of the
+code tree and its commit ancestry, opt into a separate `_rkm` history:
+
+```bash
+# Use the saved global parent.
+rkm init --branch
+rkm migrate                      # for an existing in-tree bundle
+
+# Or override the global parent for this repository.
+rkm init --branch --workspace ../widgets-knowledge
+
+# Or move an existing in-tree bundle, including uncommitted notes.
+rkm migrate --workspace ../widgets-knowledge
+```
+
+In a jj repository, rkm creates a native jj workspace based on `root()` and
+an `_rkm` bookmark. Otherwise it creates a Git worktree on an orphan `_rkm`
+branch. The workspace contains only the `rkm/` bundle. Use `--branch NAME`
+to choose another bookmark/branch name. The workspace must be a new directory
+outside the code checkout and repository metadata.
+Without a global parent, `--workspace PATH` is required. Saving a global parent
+does not automatically enable branch storage or migrate any repository.
+
+The chosen absolute location, backend and branch are saved in
+`rkm-storage.json` in the shared repository metadata (the Git directory,
+located through jj when applicable). This preference is local to the clone,
+shared by its code workspaces/worktrees, and never committed or pushed.
+Commands from code subdirectories automatically use that bundle. Commands
+from the knowledge workspace use the code checkout recorded during setup
+for link checks and rewrites.
+
+```bash
+rkm path                        # absolute bundle path, for reading/editing bodies
+rkm new todo investigate --title "Investigate" --description "Why."
+rkm commit -m "Record investigation"
+```
+
+Initialization and migration record the first knowledge commit. Subsequent
+commands leave changes for review; `rkm commit` records them in the knowledge
+workspace, advances the jj bookmark, and starts a fresh working-copy change
+(or makes a Git commit). It never commits the code checkout or pushes anything.
+Push the knowledge bookmark/branch from its workspace using your usual VCS.
+
+Migration copies and commits the bundle before removing its in-tree copy.
+It refuses unresolved conflicts, an occupied destination, or an existing
+knowledge branch that it would overwrite. Review and commit the `rkm/`
+deletions in the code checkout yourself; update `AGENTS.md` using
+`rkm conventions`, including any existing links to process instructions.
+Older code branches retaining `rkm/` must reconcile and remove that copy;
+rkm refuses to silently choose between two bundles. Existing code history
+is not rewritten.
+
+The knowledge is the project's current state across code branches. Distinguish
+draft plans from implemented behaviour; keep essential checkout-specific
+process instructions in `AGENTS.md`. This mode does not restore matching
+knowledge when you check out an older code revision.
+
+Relative links within the bundle remain ordinary Markdown links. Links between
+code and knowledge retain the logical in-tree layout (`rkm/...` from code,
+`../../README.md` from a spec), so existing references stay portable and
+`rkm check`, `mv`, `rm` and `adopt` work across both locations. Ordinary
+Markdown viewers may not resolve links crossing that boundary; use `rkm path`
+to locate knowledge files. `new` and `mv` print physical paths in branch mode.
+
+RKM commands sharing a bundle use an OS lock so concurrent log/index writes
+do not overwrite each other. Coordinate manual body edits and VCS operations
+in the shared workspace. Stop other edits while migrating.
+
+For a new clone, fetch the knowledge branch/bookmark using your usual VCS,
+then run `rkm init --branch --workspace <chosen-directory>`. It attaches to
+the existing knowledge history, leaving its contents intact. Each clone
+chooses its own location. If a configured workspace is missing or switched
+to code history, rkm reports an error instead of creating a new in-tree bundle;
+restore it at its saved location.
+
 ## Configuration
 
 `rkm/config.toml` holds what differs between repositories. Every key is

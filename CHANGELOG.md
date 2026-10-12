@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-10-13
+
+- Opt-in separate knowledge history: `init --branch --workspace PATH` and
+  `migrate --workspace PATH`, using a native jj workspace when available,
+  otherwise a Git worktree on an orphan branch. The default name is `_rkm`.
+- Remember the chosen location in shared local repository metadata, so code
+  workspaces use one current-state bundle. The in-tree default is unchanged.
+- `config --workspace-root PATH` saves a global RKM workspace parent in the
+  user config directory. Each repository gets its own directory; an explicit
+  `--workspace` overrides it and existing locations stay put.
+- `path` locates the bundle; `commit -m MESSAGE` records knowledge separately.
+- Serialize shared-bundle commands; preserve logical links across code and
+  knowledge locations. Migration commits a copy before removing the original.
+
 ## 0.1.0 — 2026-10-12
 
 First release. Needs Python 3.11+

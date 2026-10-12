@@ -1,0 +1,20 @@
+[project]
+name = "rkm"
+dynamic = ["version"]
+description = "Manage a repository's contributor and agent knowledge as an Open Knowledge Format bundle"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+rkm = "rkm:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["rkm"]
+
+[tool.setuptools.dynamic]
+version = { attr = "rkm.VERSION" }

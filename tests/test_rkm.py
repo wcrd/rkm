@@ -309,6 +309,12 @@ class ConfigTest(unittest.TestCase):
                 self.repo.write("rkm/config.toml", config)
                 self.assertIn(expected, self.repo.run("conventions", ok=False))
 
+    def test_push_policy_requires_a_nonempty_single_line(self):
+        for value in ('""', '42', '"line one\\nline two"'):
+            with self.subTest(value=value):
+                self.repo.write("rkm/config.toml", "push_policy = " + value + "\n")
+                self.assertIn("push_policy", self.repo.run("agents", ok=False))
+
     def test_skip_and_text_extensions(self):
         self.repo.write("rkm/config.toml", 'skip = ["vendor"]\ntext_extensions = [".okd"]\n')
         self.repo.run("index")
@@ -364,6 +370,9 @@ class InitTest(unittest.TestCase):
         self.assertIn("<!-- rkm:begin -->", out)
         self.assertIn("rkm conventions", out)
         self.assertNotIn("rkm:branch", out)
+        self.assertIn("this checkout's `rkm/` bundle", out)
+        self.assertNotIn("**not in this checkout**", out)
+        self.assertNotIn("everything pending in the bundle", out)
         self.assertFalse(self.repo.exists("AGENTS.md"))
         self.repo.write("AGENTS.md", "# Project rules\nUse nextest.\n")
         self.repo.run("agents", "--write")

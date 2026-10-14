@@ -2,6 +2,14 @@
 
 ## 0.3.0 — 2026-10-14
 
+- Clarify external, shared knowledge storage in the agent bootstrap, with
+  backend-specific locate/search/status commands, the shared-commit warning,
+  completion references, and accurate checkout recovery instructions.
+- Add repository `push_policy` guidance, shown in both agent instructions and
+  conventions; the default is to push only when explicitly authorized.
+- Expand conventions with document-lifecycle versus workspace-status guidance
+  and the detailed shared-workspace workflow.
+
 - Recommend Conventional Commits for knowledge history. `commit --summary`
   generates a message with an inferred kind (or `--kind`); complete `-m`
   messages remain available.

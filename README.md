@@ -134,6 +134,13 @@ for changes. This short bootstrap includes actor setup and directs agents to
 of each repository's instruction file. It contains no machine-specific paths.
 Review and commit this file with the code.
 
+The bootstrap makes external storage explicit and shows how to locate, search
+and inspect the bundle using its actual backend (jj or Git). It warns that a
+knowledge commit includes all pending bundle changes, including edits from
+other sessions, and asks agents to close completed todos/bugs with a reference
+to the implementing code commit/change. `rkm conventions` explains document
+lifecycle commands separately from VCS status and gives the detailed workflow.
+
 Existing project instructions are preserved. An untouched section previously
 pasted from `rkm conventions` is replaced; customized legacy instructions
 are retained, with the new section explaining how their RKM references resolve.
@@ -251,6 +258,22 @@ initialization commit. Direct jj/Git commits bypass RKM validation. Remote
 rules still apply and may use different regex syntax or additional constraints.
 For in-tree bundles, commit through your normal VCS using the policy shown
 by `rkm conventions`.
+
+## Knowledge push guidance
+
+RKM never pushes automatically. Its default guidance is to push only when
+explicitly authorized. Override the guidance with a top-level key in the
+bundle's `rkm/config.toml` (before any table headers):
+
+```toml
+requires = "0.3"
+push_policy = "Leave knowledge pushes to a human."
+```
+
+`push_policy` must be a nonempty single-line string. Both `rkm agents` and
+`rkm conventions` show this policy; it is guidance for contributors and agents,
+not enforcement of direct VCS commands. Refresh an existing managed block with
+`rkm agents --write` after changing the policy.
 
 ## Developing rkm
 

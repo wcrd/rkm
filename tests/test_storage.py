@@ -281,7 +281,16 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("process notes before working", agents)
         self.assertIn("rkm conventions", agents)
         self.assertIn("RKM_ACTOR", agents)
-        self.assertIn("Store todos, bugs, specs, decisions, roadmaps", agents)
+        self.assertIn("Specs, decisions, todos, bugs, roadmaps", agents)
+        self.assertIn("**not in this checkout**", agents)
+        self.assertIn("shared by this clone's code workspaces", agents)
+        self.assertIn('export RKM_ACTOR="agent/model"', agents)
+        self.assertIn('rg "search term" "$B"', agents)
+        status_command = 'jj -R "$B/.." status' if self.backend == "jj" else 'git -C "$B/.." status'
+        self.assertIn(status_command, agents)
+        self.assertIn("including other sessions'", agents)
+        self.assertIn("rkm close <id> --note", agents)
+        self.assertIn("Push only when explicitly authorized", agents)
         self.assertNotIn("| Directory |", agents)
         self.assertNotIn("rkm new todo", agents)
         self.assertNotIn(self.workspace, agents)
@@ -302,7 +311,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("# Project\n", agents)
         self.assertIn("## Tests\nUse nextest.\n", agents)
         self.assertNotIn("Everything a contributor or agent works from is in", agents)
-        self.assertEqual(agents.count("Use RKM commands for structural and frontmatter changes"), 1)
+        self.assertEqual(agents.count("Create, rename, retype, close and delete through `rkm`"), 1)
         self.assertNotIn("| Directory |", agents)
 
     def test_refresh_replaces_old_detailed_managed_section_with_bootstrap(self):
@@ -316,7 +325,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertTrue(agents.startswith("# Project rules\nUse nextest.\n\n"))
         self.assertIn('<!-- rkm:branch "_rkm" -->', agents)
         self.assertNotIn("| Directory |", agents)
-        self.assertLess(len(agents.split()), 190)
+        self.assertLess(len(agents.split()), 300)
         conventions = self.run_rkm("conventions")
         self.assertIn("| Directory |", conventions)
         self.assertIn("rkm new todo", conventions)
@@ -330,6 +339,21 @@ class BranchStorageTest(unittest.TestCase):
         self.run_rkm("agents", "--write")
         self.assertIn(printed.strip(), self.read("AGENTS.md"))
         self.assertTrue(self.read("AGENTS.md").startswith("# Project\nKeep these instructions.\n"))
+
+    def test_push_policy_is_shared_by_agents_and_conventions(self):
+        self.enable()
+        config = self.read("rkm/config.toml", self.workspace)
+        self.write("rkm/config.toml", config + '\npush_policy = "Leave knowledge pushes to a human."\n', self.workspace)
+        agents = self.run_rkm("agents")
+        conventions = self.run_rkm("conventions")
+        self.assertIn("Push policy: Leave knowledge pushes to a human.", agents)
+        self.assertIn("Push policy: Leave knowledge pushes to a human.", conventions)
+        self.assertIn("including other sessions'", conventions)
+        self.assertIn("not report workspace changes", conventions)
+        self.assertIn("rkm close <id>", conventions)
+        self.assertIn("does not push automatically", conventions)
+        self.run_rkm("agents", "--write")
+        self.assertIn("Leave knowledge pushes to a human", self.read("AGENTS.md"))
 
     def test_custom_legacy_instructions_are_preserved(self):
         original = "# Project\n\n## Where knowledge lives\nCustom instructions.\n\n## Tests\nUse nextest.\n"

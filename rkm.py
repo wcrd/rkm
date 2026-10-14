@@ -194,7 +194,7 @@ DEFAULT_TEMPLATES = {
 }
 
 
-CONFIG_KEYS = {"name", "intro", "requires", "skip", "text_extensions", "types", "commits"}
+CONFIG_KEYS = {"name", "intro", "requires", "skip", "text_extensions", "types", "commits", "push_policy"}
 TYPE_KEYS = {"dir", "section", "tracked", "template", "about"}
 COMMIT_KEYS = {"template", "guidance", "pattern"}
 
@@ -237,6 +237,10 @@ def load_config():
         sys.exit(f"rkm: rkm/config.toml: unknown key(s) {', '.join(sorted(unknown))}")
     try:
         validate_commit_policy(config.get("commits", {}))
+        if "push_policy" in config and (not isinstance(config["push_policy"], str)
+                                       or not config["push_policy"].strip()
+                                       or "\n" in config["push_policy"] or "\r" in config["push_policy"]):
+            raise ValueError("push_policy must be a nonempty single-line string")
     except (ValueError, re.error) as e:
         sys.exit(f"rkm: rkm/config.toml: {e}")
     return config
@@ -1605,6 +1609,25 @@ def conventions_text(branch_mode=None):
         text += "\nValidation pattern (Python full match of the entire message): `" + policy["pattern"] + "`\n"
     text += "\nRKM validates its own commits, including initialization and migration. Direct\n"
     text += "jj/Git commits bypass this validation; remote branch rules still apply.\n"
+    text += ("\n## Knowledge workflow\n\n"
+             "With `B=$(rkm path)`, read `$B/index.md` and search the bundle with\n"
+             '`rg "search term" "$B"`. Review pending changes with `' + knowledge_status_command() + "`.\n"
+             "`rkm status` sets document lifecycle (draft/stable/deprecated); it does\n"
+             "not report workspace changes.\n\n"
+             "When a code change finishes a todo or fixes a bug, close the knowledge item\n"
+             'in the same session with `rkm close <id> --note "<commit-or-change-id>"`.\n')
+    if branch_mode:
+        text += ("\n`rkm commit` records everything pending in the bundle, including other sessions'\n"
+                 "edits. Review the whole bundle first; coordinate unrelated pending edits\n"
+                 "with their authors rather than committing them accidentally. Command locking\n"
+                 "serializes RKM writes; it does not isolate sessions' changes. Knowledge\n"
+                 "commits are separate from code commits and are never merged into them.\n\n"
+                 "Missing configured checkouts are recreated from existing history. New clones\n"
+                 "also need the fetched knowledge branch and a global workspace parent or an\n"
+                 "explicit location. Missing history or an occupied location requires action;\n"
+                 "RKM does not create an empty replacement or overwrite another checkout.\n")
+    text += "\nPush policy: " + knowledge_push_policy() + "\n"
+    text += "This is repository guidance; RKM does not push automatically or enforce external pushes.\n"
     return text
 
 
@@ -1616,23 +1639,46 @@ AGENTS_BEGIN = "<!-- rkm:begin -->"
 AGENTS_END = "<!-- rkm:end -->"
 
 
-def agents_bootstrap():
-    text = """## Repository knowledge (RKM)
+def knowledge_status_command():
+    backend = STORAGE.get("backend") if BRANCH else BACKEND
+    return 'jj -R "$B/.." status' if backend == "jj" else 'git -C "$B/.." status'
 
-This repository uses RKM for contributor and agent knowledge.
-Store todos, bugs, specs, decisions, roadmaps, process notes and contributor guides in RKM.
-Agents must set `RKM_ACTOR` to `<agent>/<model>` before running RKM commands.
-Run `rkm conventions` and follow its rules. Run `rkm path`, read the bundle's
-`index.md`, and consult relevant specs, decisions and process notes before working.
-Use RKM commands for structural and frontmatter changes; edit document bodies directly.
-RKM paths elsewhere in this file are logical references; locate their files through
-`rkm path`. Keep repository-specific rules outside this managed section.
-"""
+
+def knowledge_push_policy():
+    return CONFIG.get("push_policy", "Push only when explicitly authorized.").strip()
+
+
+def agents_bootstrap():
+    text = "## Repository knowledge (RKM)\n\n"
     if BRANCH:
-        text += (f"\nKnowledge lives on `{BRANCH}` in a separate workspace. Missing checkouts are\n"
-                 "recreated from existing history. For a new clone, fetch the knowledge branch\n"
-                 "and configure a global workspace parent, or explicitly set up a location with\n"
-                 f"`rkm init --branch {BRANCH} --workspace <chosen-directory>`.\n")
+        text += ("Specs, decisions, todos, bugs, roadmaps, process notes and contributor guides\n"
+                 f"are **not in this checkout**. They live on `{BRANCH}` in a separate checkout\n"
+                 "shared by this clone's code workspaces.\n")
+    else:
+        text += ("Store todos, bugs, specs, decisions, roadmaps, process notes and contributor\n"
+                 "guides in this checkout's `rkm/` bundle.\n")
+    text += ("RKM paths elsewhere in this file, such as `rkm/spec/x.md`, refer to that bundle.\n\n"
+             "```bash\n"
+             'export RKM_ACTOR="agent/model"   # replace with your agent/model identity\n'
+             'B=$(rkm path)                    # locate the bundle\n'
+             'rg "search term" "$B"            # search knowledge\n'
+             + knowledge_status_command() + "           # review pending edits\n"
+             "rkm conventions                  # read and follow the full rules\n"
+             "```\n\n"
+             "Read `$B/index.md` and relevant specs, decisions and process notes before working.\n"
+             "Create, rename, retype, close and delete through `rkm`; edit bodies by hand.\n")
+    if BRANCH:
+        text += ("`rkm commit` commits everything pending in the bundle, including other sessions'\n"
+                 "edits. Review its status first. Knowledge commits stay separate from code\n"
+                 "commits and are never merged into them.\n")
+    text += ('When code finishes a todo or fixes a bug, run `rkm close <id> --note\n'
+             '"<commit-or-change-id>"` in the same session.\n'
+             "Push policy: " + knowledge_push_policy() + "\n")
+    if BRANCH:
+        text += ("Missing configured checkouts are recreated from existing history. A new clone\n"
+                 "needs the fetched knowledge branch and a global workspace parent or explicit\n"
+                 "setup location; unavailable history or an occupied location requires action.\n")
+    text += "Keep repository-specific rules outside this managed section.\n"
     return text
 
 

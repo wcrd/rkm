@@ -649,8 +649,10 @@ def enable_branch(a, migrate=False):
         if not os.path.isdir(STORE_ROOT):
             restore_workspace(a.workspace)
         validate_storage()
-        update_agents()
+        changed = update_agents()
         print(f"Using {BRANCH} knowledge workspace at {STORE_ROOT}")
+        state = "updated" if changed else "already up to date"
+        print(f"Managed RKM section in {os.path.join(REPO, 'AGENTS.md')}: {state}.")
         return
     chosen_workspace = a.workspace or preferred_workspace()
     if not chosen_workspace:
@@ -1689,8 +1691,9 @@ def agents_block():
 
 def cmd_agents(a):
     if a.write:
-        update_agents()
-        print(f"Updated the RKM section in {os.path.join(REPO, 'AGENTS.md')}")
+        changed = update_agents()
+        state = "updated" if changed else "already up to date"
+        print(f"Managed RKM section in {os.path.join(REPO, 'AGENTS.md')}: {state}.")
     else:
         print(agents_block())
 
@@ -1735,7 +1738,7 @@ def update_agents():
                 newline if content.endswith(newline) else newline * 2)
             updated = content + separator + block + newline
     if updated == content:
-        return
+        return False
     temp = ""
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=REPO,
@@ -1750,6 +1753,7 @@ def update_agents():
     finally:
         if temp and os.path.exists(temp):
             os.unlink(temp)
+    return True
 
 
 def initialize_bundle(a):

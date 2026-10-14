@@ -300,7 +300,14 @@ class BranchStorageTest(unittest.TestCase):
         self.assertTrue(updated.startswith("# Existing instructions\n\nUse nextest.\n\n"))
         self.assertTrue(updated.endswith("\n## Extra\nKeep this.\n"))
         self.assertEqual(updated.count("<!-- rkm:begin -->"), 1)
-        self.run_rkm("init", "--branch")
+        out = self.run_rkm("init", "--branch")
+        self.assertIn("already up to date", out)
+        self.assertIn(os.path.join(self.root, "AGENTS.md"), out)
+        self.assertEqual(self.read("AGENTS.md"), updated)
+        self.write("AGENTS.md", updated.replace("**not in this checkout**", "OUTDATED GENERATED SECTION"))
+        out = self.run_rkm("init", "--branch")
+        self.assertIn(": updated.", out)
+        self.assertIn(os.path.join(self.root, "AGENTS.md"), out)
         self.assertEqual(self.read("AGENTS.md"), updated)
 
     def test_migration_replaces_standard_legacy_conventions(self):

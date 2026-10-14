@@ -2,6 +2,9 @@
 
 ## 0.3.0 — 2026-10-14
 
+- Existing-repo `init --branch` and `agents --write` report the exact AGENTS.md
+  path and whether the managed section was updated or was already current.
+
 - Clarify external, shared knowledge storage in the agent bootstrap, with
   backend-specific locate/search/status commands, the shared-commit warning,
   completion references, and accurate checkout recovery instructions.

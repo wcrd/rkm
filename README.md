@@ -54,8 +54,10 @@ rkm init
 ```
 
 `init` creates `rkm/` (`index.md`, `log.md`, `config.toml` with `name` and
-`requires`) and prints a "Where knowledge lives" section for `AGENTS.md`.
-Paste it in; `rkm conventions` prints it again. Bring existing notes in with
+`requires`) and prints a short bootstrap section for `AGENTS.md`.
+Use `rkm agents --write` to add or refresh its managed section; `rkm agents`
+prints the marked block without editing the file. `rkm conventions` prints
+the full RKM rules and command examples. Bring existing notes in with
 `rkm adopt <path> <kind>`: a file outside `rkm/` moves in, and links to it
 are rewritten.
 
@@ -127,15 +129,18 @@ deletions in the code checkout yourself. Branch initialization and migration
 also create or update `AGENTS.md` in that checkout with a section delimited by
 `<!-- rkm:begin -->` and `<!-- rkm:end -->`. It tells agents to run `rkm path`,
 read the bundle's index and relevant process/spec documents, and use the tool
-for changes. The section is generated from `rkm conventions`; it contains no
-machine-specific directory paths. Review and commit this file with the code.
+for changes. This short bootstrap includes actor setup and directs agents to
+`rkm conventions` for the full usage rules, keeping the command reference out
+of each repository's instruction file. It contains no machine-specific paths.
+Review and commit this file with the code.
 
 Existing project instructions are preserved. An untouched section previously
 pasted from `rkm conventions` is replaced; customized legacy instructions
 are retained, with the new section explaining how their RKM references resolve.
-Running `rkm init --branch` again refreshes the managed section without
+Running `rkm agents --write` or `rkm init --branch` again refreshes the managed section without
 duplicating it. Malformed or duplicate markers are refused before migration.
-The default in-tree `rkm init` continues to print conventions for manual setup.
+The default in-tree `rkm init` prints the same bootstrap for manual setup;
+`rkm agents --write` can install it without changing the storage mode.
 
 Older code branches retaining `rkm/` must reconcile and remove that copy;
 rkm refuses to silently choose between two bundles. Existing code history

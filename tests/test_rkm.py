@@ -333,8 +333,9 @@ class InitTest(unittest.TestCase):
 
     def test_init_starts_a_bundle(self):
         out = self.repo.run("init")
-        self.assertIn("## Where knowledge lives", out)
-        self.assertIn("rkm new todo", out)
+        self.assertIn("## Repository knowledge (RKM)", out)
+        self.assertIn("rkm conventions", out)
+        self.assertIn(self.repo.run("agents"), out)
         minor = ".".join(VERSION.split(".")[:2])
         self.assertIn(f'name = "widgets"\nrequires = "{minor}"\n', self.repo.read("rkm/config.toml"))
         self.assertIn(f"**Initialization**: Created rkm/ with rkm {VERSION} (human:tester)",
@@ -346,6 +347,21 @@ class InitTest(unittest.TestCase):
     def test_init_refuses_an_unnamed_agent(self):
         self.repo.run("init", actor=None, agent=True, ok=False)
         self.assertFalse(self.repo.exists("rkm"))
+
+    def test_agents_print_and_write_for_an_in_tree_bundle(self):
+        self.repo.run("init")
+        out = self.repo.run("agents")
+        self.assertIn("<!-- rkm:begin -->", out)
+        self.assertIn("rkm conventions", out)
+        self.assertNotIn("rkm:branch", out)
+        self.assertFalse(self.repo.exists("AGENTS.md"))
+        self.repo.write("AGENTS.md", "# Project rules\nUse nextest.\n")
+        self.repo.run("agents", "--write")
+        content = self.repo.read("AGENTS.md")
+        self.assertTrue(content.startswith("# Project rules\nUse nextest.\n"))
+        self.assertIn(out.strip(), content)
+        self.repo.run("agents", "--write")
+        self.assertEqual(content, self.repo.read("AGENTS.md"))
 
     def test_conventions_list_the_bundle_types(self):
         self.repo.run("init")

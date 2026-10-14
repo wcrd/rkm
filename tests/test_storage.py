@@ -213,6 +213,10 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("<!-- rkm:begin -->", agents)
         self.assertIn("rkm path", agents)
         self.assertIn("process notes before working", agents)
+        self.assertIn("rkm conventions", agents)
+        self.assertIn("RKM_ACTOR", agents)
+        self.assertNotIn("| Directory |", agents)
+        self.assertNotIn("rkm new todo", agents)
         self.assertNotIn(self.workspace, agents)
         self.write("AGENTS.md", "# Existing instructions\n\nUse nextest.\n\n" + agents + "\n## Extra\nKeep this.\n")
         self.run_rkm("init", "--branch")
@@ -231,7 +235,34 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("# Project\n", agents)
         self.assertIn("## Tests\nUse nextest.\n", agents)
         self.assertNotIn("Everything a contributor or agent works from is in", agents)
-        self.assertEqual(agents.count("**Change it only through `rkm`.**"), 1)
+        self.assertEqual(agents.count("Use RKM commands for structural and frontmatter changes"), 1)
+        self.assertNotIn("| Directory |", agents)
+
+    def test_refresh_replaces_old_detailed_managed_section_with_bootstrap(self):
+        self.enable()
+        original = "# Project rules\nUse nextest.\n\n"
+        original += '<!-- rkm:begin -->\n<!-- rkm:branch "_rkm" -->\n'
+        original += self.run_rkm("conventions") + "<!-- rkm:end -->\n"
+        self.write("AGENTS.md", original)
+        self.run_rkm("init", "--branch")
+        agents = self.read("AGENTS.md")
+        self.assertTrue(agents.startswith("# Project rules\nUse nextest.\n\n"))
+        self.assertIn('<!-- rkm:branch "_rkm" -->', agents)
+        self.assertNotIn("| Directory |", agents)
+        self.assertLess(len(agents.split()), 190)
+        conventions = self.run_rkm("conventions")
+        self.assertIn("| Directory |", conventions)
+        self.assertIn("rkm new todo", conventions)
+
+    def test_agents_command_matches_the_written_block(self):
+        self.enable()
+        self.assertEqual(self.run_rkm("agents"), self.read("AGENTS.md"))
+        self.write("AGENTS.md", "# Project\nKeep these instructions.\n")
+        printed = self.run_rkm("agents")
+        self.assertEqual(self.read("AGENTS.md"), "# Project\nKeep these instructions.\n")
+        self.run_rkm("agents", "--write")
+        self.assertIn(printed.strip(), self.read("AGENTS.md"))
+        self.assertTrue(self.read("AGENTS.md").startswith("# Project\nKeep these instructions.\n"))
 
     def test_custom_legacy_instructions_are_preserved(self):
         original = "# Project\n\n## Where knowledge lives\nCustom instructions.\n\n## Tests\nUse nextest.\n"
@@ -303,6 +334,10 @@ class BranchStorageTest(unittest.TestCase):
             self.command("jj", "git", "init", "--colocate", cwd=clone)
         parent = os.path.realpath(os.path.join(self.tmp.name, "global-knowledge"))
         self.run_rkm("config", "--workspace-root", parent, cwd=clone)
+        printed = subprocess.run([sys.executable, "-I", RKM, "agents"], cwd=clone,
+                                 env=self.env, capture_output=True, text=True)
+        self.assertEqual(printed.returncode, 0, printed.stderr)
+        self.assertEqual(printed.stdout, self.read("AGENTS.md", root=clone))
         self.assertIn("todos/a", self.run_rkm("ls", cwd=clone))
         self.assertTrue(self.run_rkm("path", cwd=clone).strip().startswith(parent + os.sep))
         self.assertFalse(os.path.exists(os.path.join(clone, "rkm")))

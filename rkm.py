@@ -33,7 +33,8 @@ in place. Each repository has its own rkm/config.toml.
   rkm ls [--type T] [--state S] [--status S] [--json]
   rkm index                        regenerate rkm/index.md
   rkm check                        conformance; run it as a CI gate
-  rkm conventions                  the rules, as a section for AGENTS.md
+  rkm conventions                  the full RKM rules and command examples
+  rkm agents [--write]              print the short bootstrap or update AGENTS.md
 
 An <id> is a concept id (`todos/regex-engine-swap`), a path
 (`rkm/todos/regex-engine-swap.md`) or a bare slug when it is unique.
@@ -1421,9 +1422,8 @@ def cmd_check(a):
 
 # --- distribution -----------------------------------------------------------
 
-# `rkm conventions` prints this for a repository's AGENTS.md, with the
-# bundle's own types in the table. It is the canonical statement of the
-# rules; `check` enforces them.
+# `rkm conventions` is the canonical full reference, with this bundle's
+# types in the table. AGENTS.md directs agents here; `check` enforces the rules.
 CONVENTIONS = """\
 ## Where knowledge lives
 
@@ -1499,7 +1499,7 @@ def conventions_text(branch_mode=None):
             "workspaces. `rkm/` paths below are logical identifiers; `rkm` resolves them.\n"
             "If the knowledge checkout is absent, ordinary RKM commands recreate it from\n"
             "the existing branch at the saved location. In a new clone, the declaration\n"
-            "in this section lets RKM set up the checkout using your global workspace parent.\n"
+            "in AGENTS.md lets RKM set up the checkout using your global workspace parent.\n"
             "For a new clone, fetch the knowledge branch and run\n"
             f"`rkm init --branch {BRANCH} --workspace <chosen-directory>`.\n"
             "Keep essential checkout-specific instructions in AGENTS.md.\n")
@@ -1524,6 +1524,38 @@ AGENTS_BEGIN = "<!-- rkm:begin -->"
 AGENTS_END = "<!-- rkm:end -->"
 
 
+def agents_bootstrap():
+    text = """## Repository knowledge (RKM)
+
+This repository uses RKM for contributor and agent knowledge.
+Agents must set `RKM_ACTOR` to `<agent>/<model>` before running RKM commands.
+Run `rkm conventions` and follow its rules. Run `rkm path`, read the bundle's
+`index.md`, and consult relevant specs, decisions and process notes before working.
+Use RKM commands for structural and frontmatter changes; edit document bodies directly.
+RKM paths elsewhere in this file are logical references; locate their files through
+`rkm path`. Keep repository-specific rules outside this managed section.
+"""
+    if BRANCH:
+        text += (f"\nKnowledge lives on `{BRANCH}` in a separate workspace. Missing checkouts are\n"
+                 "recreated from existing history. For a new clone, fetch the knowledge branch\n"
+                 "and configure a global workspace parent, or explicitly set up a location with\n"
+                 f"`rkm init --branch {BRANCH} --workspace <chosen-directory>`.\n")
+    return text
+
+
+def agents_block():
+    declaration = "\n<!-- rkm:branch " + json.dumps(BRANCH) + " -->" if BRANCH else ""
+    return AGENTS_BEGIN + declaration + "\n" + agents_bootstrap().rstrip("\n") + "\n" + AGENTS_END
+
+
+def cmd_agents(a):
+    if a.write:
+        update_agents()
+        print(f"Updated the RKM section in {os.path.join(REPO, 'AGENTS.md')}")
+    else:
+        print(agents_block())
+
+
 def agents_content():
     path = os.path.join(REPO, "AGENTS.md")
     if os.path.islink(path):
@@ -1545,9 +1577,7 @@ def update_agents():
     path = os.path.join(REPO, "AGENTS.md")
     content = agents_content()
     newline = "\r\n" if "\r\n" in content else "\n"
-    section = conventions_text().replace("## Where knowledge lives", "## Repository knowledge (RKM)", 1)
-    block = (AGENTS_BEGIN + "\n<!-- rkm:branch " + json.dumps(BRANCH) + " -->\n"
-             + section.rstrip("\n") + "\n" + AGENTS_END).replace("\n", newline)
+    block = agents_block().replace("\n", newline)
     if AGENTS_BEGIN in content:
         start = content.index(AGENTS_BEGIN)
         end = content.index(AGENTS_END) + len(AGENTS_END)
@@ -1604,8 +1634,8 @@ def cmd_init(a):
         raise Fail(f"{REPO} already has an rkm/ bundle")
     initialize_bundle(a)
     print(f"Created rkm/ in {REPO}. Add this section to AGENTS.md "
-          "(`rkm conventions` prints it again):\n")
-    cmd_conventions(a)
+          "(`rkm conventions` gives the full rules):\n")
+    print(agents_block())
 
 
 def cmd_migrate(a):
@@ -1690,6 +1720,9 @@ def main(argv=None):
     sub.add_parser("index").set_defaults(fn=cmd_index)
     sub.add_parser("check").set_defaults(fn=cmd_check)
     sub.add_parser("conventions").set_defaults(fn=cmd_conventions)
+    p = sub.add_parser("agents", help="print or write the short managed AGENTS.md section")
+    p.add_argument("--write", action="store_true", help="update AGENTS.md, preserving other instructions")
+    p.set_defaults(fn=cmd_agents)
     p = sub.add_parser("init")
     p.add_argument("--name", help="project name for the index intro (default: the directory name)")
     p.add_argument("--branch", nargs="?", const="_rkm", help="use separate history (default: _rkm)")
@@ -1728,7 +1761,8 @@ def main(argv=None):
             if declaration:
                 if not knowledge_revision(BACKEND, declaration):
                     raise Fail(f"knowledge branch {declaration} is unavailable; fetch it before using RKM")
-                enable_branch(argparse.Namespace(branch=declaration, workspace=None, name=None))
+                with contextlib.redirect_stdout(sys.stderr):
+                    enable_branch(argparse.Namespace(branch=declaration, workspace=None, name=None))
             if BRANCH and a.fn not in (cmd_init, cmd_migrate, cmd_config, cmd_workspace):
                 if not os.path.isdir(STORE_ROOT):
                     restore_workspace()

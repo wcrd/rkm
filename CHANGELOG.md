@@ -16,6 +16,9 @@
 - Branch initialization and migration manage an RKM section in the code
   checkout's `AGENTS.md`, preserving other instructions and giving agents a
   portable way to discover the external knowledge bundle.
+- Keep that section short, referring agents to `rkm conventions` for the full
+  rules. `rkm agents` prints the managed bootstrap; `rkm agents --write`
+  updates it while preserving project-specific instructions in either mode.
 - `workspace add` and `workspace remove` manage knowledge checkouts, retaining
   history and preferences and refusing removal with uncommitted files. Missing
   checkouts are recreated from the existing branch on use; a new clone can

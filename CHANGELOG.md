@@ -13,6 +13,13 @@
 - `path` locates the bundle; `commit -m MESSAGE` records knowledge separately.
 - Serialize shared-bundle commands; preserve logical links across code and
   knowledge locations. Migration commits a copy before removing the original.
+- Branch initialization and migration manage an RKM section in the code
+  checkout's `AGENTS.md`, preserving other instructions and giving agents a
+  portable way to discover the external knowledge bundle.
+- `workspace add` and `workspace remove` manage knowledge checkouts, retaining
+  history and preferences and refusing removal with uncommitted files. Missing
+  checkouts are recreated from the existing branch on use; a new clone can
+  discover the branch from AGENTS.md and use its configured global parent.
 
 ## 0.1.0 — 2026-10-12
 

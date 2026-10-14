@@ -13,6 +13,8 @@ in place. Each repository has its own rkm/config.toml.
                                   start a bundle (default branch: _rkm)
   rkm migrate [--workspace PATH]  move a bundle to _rkm (jj preferred, else git)
   rkm path                        print the bundle's absolute directory
+  rkm workspace add [--workspace PATH]  reattach existing knowledge history
+  rkm workspace remove            remove a clean checkout, retaining history
   rkm config [--workspace-root PATH]  view or save the global knowledge workspace parent
   rkm commit -m MESSAGE           commit knowledge on its separate branch
   rkm new todo|bug|spec|decision|roadmap|process <slug> --title T --description D
@@ -382,6 +384,111 @@ def validate_storage():
         raise Fail(f"no rkm/ bundle in the knowledge workspace: {STORE_ROOT}")
 
 
+def restore_workspace(workspace=None):
+    """Reattach existing knowledge history; never create an empty replacement."""
+    global STORE_ROOT, BUNDLE
+    backend = STORAGE["backend"]
+    revision = knowledge_revision(backend, BRANCH)
+    if not revision:
+        raise Fail(f"knowledge branch {BRANCH} is unavailable; fetch it before recreating its workspace")
+    validate_knowledge_revision(backend, revision)
+    target = os.path.realpath(os.path.expanduser(workspace)) if workspace else STORE_ROOT
+    if os.path.lexists(target):
+        raise Fail(f"workspace location already exists: {target}")
+    if os.path.commonpath([target, os.path.realpath(REPO)]) == os.path.realpath(REPO) or (
+            os.path.commonpath([target, REPO_META]) == REPO_META):
+        raise Fail("the knowledge workspace must be outside the code checkout and repository metadata")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    if backend == "jj":
+        registered = jj("workspace", "root", "--name", BRANCH, check=False)
+        names = jj("workspace", "list", "-T", 'name ++ "\\n"').stdout.splitlines()
+        if BRANCH in names:
+            if registered.returncode == 0:
+                old = os.path.realpath(registered.stdout.strip())
+                if old != STORE_ROOT or os.path.exists(old):
+                    raise Fail("knowledge workspace is registered elsewhere; reconcile its location before recreating it")
+            jj("workspace", "forget", BRANCH)
+        jj("workspace", "add", "--name", BRANCH, "-r", revision,
+           "--sparse-patterns", "full", target, snapshot=True)
+    else:
+        # Git can remove the registration of a worktree whose directory is gone.
+        git("worktree", "remove", STORE_ROOT, check=False)
+        local = git("rev-parse", "--verify", f"refs/heads/{BRANCH}", check=False).returncode == 0
+        git("worktree", "add", *([] if local else ["-b", BRANCH]), target,
+            BRANCH if local else revision)
+    save_storage(backend, BRANCH, target)
+    configure_bundle()
+    validate_storage()
+
+
+def declared_branch():
+    """Portable opt-in declaration in the generated AGENTS.md block."""
+    content = agents_content()
+    if AGENTS_BEGIN not in content:
+        return ""
+    block = content[content.index(AGENTS_BEGIN):content.index(AGENTS_END)]
+    match = re.search(r"^<!-- rkm:branch (.+) -->$", block, re.M)
+    if not match:
+        return ""
+    try:
+        branch = json.loads(match.group(1))
+    except ValueError as e:
+        raise Fail("invalid RKM branch declaration in AGENTS.md") from e
+    if not isinstance(branch, str) or not branch:
+        raise Fail("invalid RKM branch declaration in AGENTS.md")
+    return branch
+
+
+def cmd_workspace(a):
+    if not BRANCH:
+        if a.action == "remove":
+            raise Fail("no branch storage is configured")
+        branch = declared_branch() or "_rkm"
+        if not knowledge_revision(BACKEND, branch):
+            raise Fail(f"knowledge branch {branch} is unavailable; fetch it or use `rkm init --branch`")
+        enable_branch(argparse.Namespace(branch=branch, workspace=a.workspace, name=None))
+        return
+    if a.action == "add":
+        if os.path.isdir(STORE_ROOT):
+            if a.workspace and os.path.realpath(os.path.expanduser(a.workspace)) != STORE_ROOT:
+                raise Fail("remove the existing knowledge workspace before choosing another location")
+            validate_storage()
+        else:
+            restore_workspace(a.workspace)
+        update_agents()
+        print(f"Knowledge workspace: {STORE_ROOT}")
+        return
+    actor()
+    if not os.path.isdir(STORE_ROOT):
+        print("Knowledge workspace is already absent; its location preference is retained")
+        return
+    validate_storage()
+    backend = STORAGE["backend"]
+    if backend == "jj":
+        changes = jj("diff", "--summary", "--from", f"bookmarks(exact:{json.dumps(BRANCH)})",
+                     "--to", "@", cwd=STORE_ROOT, snapshot=True).stdout.strip()
+        recorded = set(jj("file", "list", "-r", "@", cwd=STORE_ROOT).stdout.splitlines())
+        extra = []
+        for d, dirs, files in os.walk(STORE_ROOT):
+            if d == STORE_ROOT:
+                dirs[:] = [n for n in dirs if n not in (".git", ".jj")]
+                files = [n for n in files if n not in (".git", ".jj")]
+            for name in files + [n for n in dirs if os.path.islink(os.path.join(d, n))]:
+                rel = os.path.relpath(os.path.join(d, name), STORE_ROOT)
+                if rel not in recorded:
+                    extra.append(rel)
+        if changes or extra:
+            raise Fail("knowledge workspace has uncommitted or untracked files; commit or preserve them before removal")
+        jj("workspace", "forget", BRANCH)
+        shutil.rmtree(STORE_ROOT)
+    else:
+        if git("status", "--porcelain", "--untracked-files=all", "--ignored", cwd=STORE_ROOT).stdout.strip():
+            raise Fail("knowledge workspace has uncommitted or untracked files; commit or preserve them before removal")
+        git("worktree", "remove", STORE_ROOT)
+    print("Removed the knowledge workspace; its history and saved location are retained.\n"
+          "The next RKM command recreates it, or use `rkm workspace add`.")
+
+
 def knowledge_revision(backend, branch):
     """Find one existing local or fetched remote branch, without fetching."""
     if backend == "jj":
@@ -459,9 +566,13 @@ def enable_branch(a, migrate=False):
     if BRANCH:
         if migrate:
             raise Fail("branch storage is already enabled")
-        if branch != BRANCH or (a.workspace and os.path.realpath(os.path.expanduser(a.workspace)) != STORE_ROOT):
+        if branch != BRANCH or (os.path.isdir(STORE_ROOT) and a.workspace
+                                and os.path.realpath(os.path.expanduser(a.workspace)) != STORE_ROOT):
             raise Fail("branch storage is already configured with a different branch or workspace")
+        if not os.path.isdir(STORE_ROOT):
+            restore_workspace(a.workspace)
         validate_storage()
+        update_agents()
         print(f"Using {BRANCH} knowledge workspace at {STORE_ROOT}")
         return
     chosen_workspace = a.workspace or preferred_workspace()
@@ -469,6 +580,7 @@ def enable_branch(a, migrate=False):
         raise Fail("supply the knowledge workspace location with --workspace PATH, or save a global "
                    "parent with `rkm config --workspace-root PATH`")
     actor()  # authorize before workspace creation or copying
+    agents_content()  # reject malformed managed sections before migrating data
     workspace = os.path.realpath(os.path.expanduser(chosen_workspace))
     if os.path.commonpath([workspace, os.path.realpath(REPO)]) == os.path.realpath(REPO) or (
             os.path.commonpath([workspace, REPO_META]) == REPO_META):
@@ -558,12 +670,14 @@ def enable_branch(a, migrate=False):
             else:
                 git("worktree", "remove", "--force", workspace, check=False)
         raise
+    update_agents()
     if migrate:
         shutil.rmtree(source)
         print("Migrated rkm/. Review and commit its removal in the code checkout.")
     print(f"Knowledge lives in {workspace} on {branch} ({BACKEND}).\n"
           "`rkm path` prints the bundle location; `rkm commit -m MESSAGE` records knowledge changes.\n"
-          "Update AGENTS.md using `rkm conventions`. Push knowledge separately when ready.")
+          "Updated the RKM section in AGENTS.md. Review and commit it in the code checkout.\n"
+          "Push knowledge separately when ready.")
 
 
 # --- frontmatter ------------------------------------------------------------
@@ -1367,18 +1481,25 @@ rkm check                         # conformance: frontmatter, links, index
 """
 
 
-def cmd_conventions(a):
+def conventions_text(branch_mode=None):
     rows = "\n".join(f"| `rkm/{v['dir']}/` | `{t}` | {v.get('about', '')} |"
                      for t, v in TYPE_DEFS.items() if v.get("dir"))
     text = CONVENTIONS.replace("{rows}", rows).replace("{okf}", OKF)
-    if BRANCH:
+    branch_mode = bool(BRANCH) if branch_mode is None else branch_mode
+    if branch_mode:
         text = text.replace(
             "Everything a contributor or agent works from is in `rkm/` (repository\n"
             "knowledge management), listed in [rkm/index.md](rkm/index.md):",
             f"Repository knowledge lives on `{BRANCH}` in a separate {STORAGE['backend']} workspace.\n"
             "Run `rkm path` from this code checkout to locate the bundle, then read its\n"
-            "`index.md`. The saved location is local to this clone and shared by its code\n"
+            "`index.md` and the relevant specs, decisions and process notes before working.\n"
+            "RKM paths elsewhere in this file also use this logical layout; locate their\n"
+            "files through `rkm path`, rather than assuming a directory in the code checkout.\n"
+            "The saved location is local to this clone and shared by its code\n"
             "workspaces. `rkm/` paths below are logical identifiers; `rkm` resolves them.\n"
+            "If the knowledge checkout is absent, ordinary RKM commands recreate it from\n"
+            "the existing branch at the saved location. In a new clone, the declaration\n"
+            "in this section lets RKM set up the checkout using your global workspace parent.\n"
             "For a new clone, fetch the knowledge branch and run\n"
             f"`rkm init --branch {BRANCH} --workspace <chosen-directory>`.\n"
             "Keep essential checkout-specific instructions in AGENTS.md.\n")
@@ -1392,7 +1513,72 @@ def cmd_conventions(a):
             "  writes; coordinate simultaneous manual edits to the same file.\n"
             "- Run `rkm commit -m MESSAGE` to record knowledge changes. Push the knowledge\n"
             "  bookmark/branch separately; it is never merged into the code history.")
-    print(text, end="")
+    return text
+
+
+def cmd_conventions(a):
+    print(conventions_text(), end="")
+
+
+AGENTS_BEGIN = "<!-- rkm:begin -->"
+AGENTS_END = "<!-- rkm:end -->"
+
+
+def agents_content():
+    path = os.path.join(REPO, "AGENTS.md")
+    if os.path.islink(path):
+        raise Fail("AGENTS.md is a symbolic link; use a regular file before enabling branch storage")
+    try:
+        with open(path, encoding="utf-8", newline="") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return ""
+    if (content.count(AGENTS_BEGIN), content.count(AGENTS_END)) not in ((0, 0), (1, 1)) or (
+            AGENTS_BEGIN in content and content.index(AGENTS_BEGIN) > content.index(AGENTS_END)):
+        raise Fail("AGENTS.md has malformed or duplicate RKM markers; repair them before enabling branch storage")
+    return content
+
+
+def update_agents():
+    """Own only the marked RKM block; preserve existing project instructions."""
+    actor()
+    path = os.path.join(REPO, "AGENTS.md")
+    content = agents_content()
+    newline = "\r\n" if "\r\n" in content else "\n"
+    section = conventions_text().replace("## Where knowledge lives", "## Repository knowledge (RKM)", 1)
+    block = (AGENTS_BEGIN + "\n<!-- rkm:branch " + json.dumps(BRANCH) + " -->\n"
+             + section.rstrip("\n") + "\n" + AGENTS_END).replace("\n", newline)
+    if AGENTS_BEGIN in content:
+        start = content.index(AGENTS_BEGIN)
+        end = content.index(AGENTS_END) + len(AGENTS_END)
+        updated = content[:start] + block + content[end:]
+    else:
+        # Recognize an untouched section pasted from older `rkm conventions`.
+        # Customized legacy prose remains intact; the new section explains
+        # that all its RKM references use the external logical layout.
+        legacy = conventions_text(False).replace("\n", newline)
+        if legacy in content:
+            updated = content.replace(legacy, block + newline, 1)
+        else:
+            separator = "" if not content or content.endswith(newline * 2) else (
+                newline if content.endswith(newline) else newline * 2)
+            updated = content + separator + block + newline
+    if updated == content:
+        return
+    temp = ""
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=REPO,
+                                         prefix=".rkm-agents-", delete=False) as f:
+            temp = f.name
+            f.write(updated)
+        if os.path.exists(path):
+            os.chmod(temp, os.stat(path).st_mode & 0o7777)
+        else:
+            os.chmod(temp, 0o644)
+        os.replace(temp, path)
+    finally:
+        if temp and os.path.exists(temp):
+            os.unlink(temp)
 
 
 def initialize_bundle(a):
@@ -1522,18 +1708,33 @@ def main(argv=None):
     group.add_argument("--workspace-root", help="global parent directory for RKM knowledge workspaces")
     group.add_argument("--unset-workspace-root", action="store_true", help="clear the global location preference")
     p.set_defaults(fn=cmd_config)
+    p = sub.add_parser("workspace", help="remove or reattach the knowledge workspace")
+    workspace_sub = p.add_subparsers(dest="action", required=True)
+    p = workspace_sub.add_parser("add")
+    p.add_argument("--workspace", help="override the saved or global knowledge location")
+    p.set_defaults(fn=cmd_workspace)
+    workspace_sub.add_parser("remove").set_defaults(fn=cmd_workspace)
     a = ap.parse_args(argv)
     try:
-        lock = storage_lock() if a.fn is not cmd_config and REPO_META and (BRANCH or a.fn is cmd_migrate or
+        declaration = declared_branch() if (not BRANCH and not has_bundle(REPO)
+                                            and a.fn not in (cmd_init, cmd_migrate, cmd_config, cmd_workspace)) else ""
+        lock = storage_lock() if a.fn is not cmd_config and REPO_META and (BRANCH or declaration
+                                               or a.fn in (cmd_migrate, cmd_workspace) or
                                                (a.fn is cmd_init and a.branch is not None)) else contextlib.nullcontext()
         with lock:
             # Another process may have enabled branch mode while we waited.
             if a.fn is not cmd_config and STORAGE_FILE and not BRANCH and os.path.exists(STORAGE_FILE):
                 raise Fail("storage mode changed while this command was waiting; run it again")
-            if BRANCH and a.fn not in (cmd_init, cmd_migrate, cmd_config):
+            if declaration:
+                if not knowledge_revision(BACKEND, declaration):
+                    raise Fail(f"knowledge branch {declaration} is unavailable; fetch it before using RKM")
+                enable_branch(argparse.Namespace(branch=declaration, workspace=None, name=None))
+            if BRANCH and a.fn not in (cmd_init, cmd_migrate, cmd_config, cmd_workspace):
+                if not os.path.isdir(STORE_ROOT):
+                    restore_workspace()
                 validate_storage()
                 configure_bundle()
-            if a.fn not in (cmd_init, cmd_migrate, cmd_config) and not has_bundle(STORE_ROOT):
+            if a.fn not in (cmd_init, cmd_migrate, cmd_config, cmd_workspace) and not has_bundle(STORE_ROOT):
                 raise Fail("no rkm/ bundle here or above; `rkm init` starts one")
             a.fn(a)
     except (Fail, OSError) as e:

@@ -123,8 +123,20 @@ Push the knowledge bookmark/branch from its workspace using your usual VCS.
 Migration copies and commits the bundle before removing its in-tree copy.
 It refuses unresolved conflicts, an occupied destination, or an existing
 knowledge branch that it would overwrite. Review and commit the `rkm/`
-deletions in the code checkout yourself; update `AGENTS.md` using
-`rkm conventions`, including any existing links to process instructions.
+deletions in the code checkout yourself. Branch initialization and migration
+also create or update `AGENTS.md` in that checkout with a section delimited by
+`<!-- rkm:begin -->` and `<!-- rkm:end -->`. It tells agents to run `rkm path`,
+read the bundle's index and relevant process/spec documents, and use the tool
+for changes. The section is generated from `rkm conventions`; it contains no
+machine-specific directory paths. Review and commit this file with the code.
+
+Existing project instructions are preserved. An untouched section previously
+pasted from `rkm conventions` is replaced; customized legacy instructions
+are retained, with the new section explaining how their RKM references resolve.
+Running `rkm init --branch` again refreshes the managed section without
+duplicating it. Malformed or duplicate markers are refused before migration.
+The default in-tree `rkm init` continues to print conventions for manual setup.
+
 Older code branches retaining `rkm/` must reconcile and remove that copy;
 rkm refuses to silently choose between two bundles. Existing code history
 is not rewritten.
@@ -145,12 +157,27 @@ RKM commands sharing a bundle use an OS lock so concurrent log/index writes
 do not overwrite each other. Coordinate manual body edits and VCS operations
 in the shared workspace. Stop other edits while migrating.
 
-For a new clone, fetch the knowledge branch/bookmark using your usual VCS,
-then run `rkm init --branch --workspace <chosen-directory>`. It attaches to
-the existing knowledge history, leaving its contents intact. Each clone
-chooses its own location. If a configured workspace is missing or switched
-to code history, rkm reports an error instead of creating a new in-tree bundle;
-restore it at its saved location.
+Manage the knowledge checkout through the CLI:
+
+```bash
+rkm workspace remove             # clean checkout only; keep branch and location
+rkm workspace add                # recreate at the saved location
+rkm workspace add --workspace /another/location
+```
+
+Removal refuses uncommitted, untracked or ignored files. It retains the
+knowledge history, local location preference and AGENTS.md declaration.
+The next ordinary RKM operation automatically recreates an absent checkout
+from the existing knowledge branch. A checkout switched to code history or
+an occupied location is refused rather than overwritten.
+
+For a new clone, fetch the knowledge branch/bookmark using your usual VCS.
+The managed AGENTS.md block declares that branch; with a global workspace
+parent configured, the first ordinary RKM operation attaches its workspace
+automatically. Otherwise use `rkm workspace add --workspace <chosen-directory>`
+or `rkm init --branch --workspace <chosen-directory>`. Each clone chooses its
+own location. If the knowledge branch is unavailable, rkm asks you to fetch
+it; it never creates an empty replacement for missing knowledge history.
 
 ## Configuration
 

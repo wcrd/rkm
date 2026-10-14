@@ -142,11 +142,13 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("code ancestry", out)
         self.assertFalse(os.path.exists(self.workspace))
 
-    def test_missing_workspace_does_not_silently_create_an_in_tree_bundle(self):
+    def test_missing_workspace_is_recreated_from_committed_knowledge(self):
         self.enable()
+        self.new("a")
+        self.run_rkm("commit", "-m", "Save A")
         os.rename(self.workspace, self.workspace + "-moved")
-        out = self.run_rkm("index", ok=False)
-        self.assertIn("workspace is missing", out)
+        self.assertIn("todos/a", self.run_rkm("ls"))
+        self.assertTrue(os.path.exists(self.workspace))
         self.assertFalse(os.path.exists(os.path.join(self.root, "rkm")))
 
     def test_migration_refuses_conflict_markers(self):
@@ -204,6 +206,106 @@ class BranchStorageTest(unittest.TestCase):
         self.write("rkm/log.md", "# Old notes\n")
         self.assertIn("both", self.run_rkm("ls", ok=False))
         self.assertEqual(self.read("rkm/log.md"), "# Old notes\n")
+
+    def test_branch_init_creates_agents_and_refreshes_only_its_block(self):
+        self.enable()
+        agents = self.read("AGENTS.md")
+        self.assertIn("<!-- rkm:begin -->", agents)
+        self.assertIn("rkm path", agents)
+        self.assertIn("process notes before working", agents)
+        self.assertNotIn(self.workspace, agents)
+        self.write("AGENTS.md", "# Existing instructions\n\nUse nextest.\n\n" + agents + "\n## Extra\nKeep this.\n")
+        self.run_rkm("init", "--branch")
+        updated = self.read("AGENTS.md")
+        self.assertTrue(updated.startswith("# Existing instructions\n\nUse nextest.\n\n"))
+        self.assertTrue(updated.endswith("\n## Extra\nKeep this.\n"))
+        self.assertEqual(updated.count("<!-- rkm:begin -->"), 1)
+        self.run_rkm("init", "--branch")
+        self.assertEqual(self.read("AGENTS.md"), updated)
+
+    def test_migration_replaces_standard_legacy_conventions(self):
+        self.run_rkm("init")
+        self.write("AGENTS.md", "# Project\n\n" + self.run_rkm("conventions") + "\n## Tests\nUse nextest.\n")
+        self.run_rkm("migrate", "--workspace", self.workspace)
+        agents = self.read("AGENTS.md")
+        self.assertIn("# Project\n", agents)
+        self.assertIn("## Tests\nUse nextest.\n", agents)
+        self.assertNotIn("Everything a contributor or agent works from is in", agents)
+        self.assertEqual(agents.count("**Change it only through `rkm`.**"), 1)
+
+    def test_custom_legacy_instructions_are_preserved(self):
+        original = "# Project\n\n## Where knowledge lives\nCustom instructions.\n\n## Tests\nUse nextest.\n"
+        self.write("AGENTS.md", original)
+        self.enable()
+        self.assertTrue(self.read("AGENTS.md").startswith(original))
+        self.assertIn("RKM paths elsewhere in this file", self.read("AGENTS.md"))
+
+    def test_malformed_agents_markers_refuse_migration_without_moving_notes(self):
+        self.run_rkm("init")
+        self.write("AGENTS.md", "# Project\n<!-- rkm:begin -->\nUnfinished.\n")
+        out = self.run_rkm("migrate", "--workspace", self.workspace, ok=False)
+        self.assertIn("malformed", out)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "rkm")))
+        self.assertFalse(os.path.exists(self.workspace))
+
+    def test_workspace_remove_refuses_dirty_notes_then_recreates_on_use(self):
+        self.enable()
+        self.new("a")
+        self.assertIn("uncommitted", self.run_rkm("workspace", "remove", ok=False))
+        self.assertTrue(os.path.exists(self.workspace))
+        self.run_rkm("commit", "-m", "Save A")
+        self.run_rkm("workspace", "remove")
+        self.assertFalse(os.path.exists(self.workspace))
+        self.assertIn("todos/a", self.run_rkm("ls"))
+        self.assertTrue(os.path.exists(self.workspace))
+        self.run_rkm("check")
+
+    def test_workspace_add_can_choose_a_new_location_after_removal(self):
+        self.enable()
+        self.run_rkm("workspace", "remove")
+        destination = self.workspace + "-new"
+        self.run_rkm("workspace", "add", "--workspace", destination)
+        self.assertEqual(self.run_rkm("path").strip(), os.path.join(destination, "rkm"))
+        self.assertFalse(os.path.exists(self.workspace))
+
+    def test_workspace_remove_preserves_ignored_local_files(self):
+        self.enable()
+        self.write("rkm/.gitignore", "local.md\n", root=self.workspace)
+        self.run_rkm("commit", "-m", "Ignore local scratch")
+        self.write("rkm/local.md", "Uncommitted local knowledge.\n", root=self.workspace)
+        self.assertIn("uncommitted", self.run_rkm("workspace", "remove", ok=False))
+        self.assertEqual(self.read("rkm/local.md", self.workspace), "Uncommitted local knowledge.\n")
+
+    def test_missing_history_does_not_create_an_empty_replacement(self):
+        self.enable()
+        self.run_rkm("workspace", "remove")
+        if self.backend == "jj":
+            self.command("jj", "bookmark", "delete", "_rkm")
+        else:
+            self.command("git", "branch", "-D", "_rkm")
+        self.assertIn("fetch", self.run_rkm("ls", ok=False))
+        self.assertFalse(os.path.exists(self.workspace))
+
+    def test_new_clone_discovers_agents_and_bootstraps_existing_history(self):
+        self.enable()
+        self.new("a")
+        self.run_rkm("commit", "-m", "Save knowledge")
+        if self.backend == "jj":
+            self.command("jj", "commit", "-m", "Advertise RKM")
+            self.command("jj", "bookmark", "set", "main", "-r", "@-")
+            self.command("jj", "git", "export")
+        else:
+            self.command("git", "add", "AGENTS.md")
+            self.command("git", "commit", "-m", "Advertise RKM")
+        clone = os.path.realpath(os.path.join(self.tmp.name, "auto-clone"))
+        self.command("git", "clone", "--branch", "main", self.root, clone)
+        if self.backend == "jj":
+            self.command("jj", "git", "init", "--colocate", cwd=clone)
+        parent = os.path.realpath(os.path.join(self.tmp.name, "global-knowledge"))
+        self.run_rkm("config", "--workspace-root", parent, cwd=clone)
+        self.assertIn("todos/a", self.run_rkm("ls", cwd=clone))
+        self.assertTrue(self.run_rkm("path", cwd=clone).strip().startswith(parent + os.sep))
+        self.assertFalse(os.path.exists(os.path.join(clone, "rkm")))
 
     def test_global_parent_is_saved_and_used_only_for_knowledge(self):
         parent = os.path.realpath(os.path.join(self.tmp.name, "all-knowledge"))

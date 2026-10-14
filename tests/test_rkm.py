@@ -299,6 +299,16 @@ class ConfigTest(unittest.TestCase):
         self.repo.write("rkm/config.toml", '[types.Todo]\ndri = "x"\n')
         self.assertIn("unknown key(s) types.Todo.dri", self.repo.run("index", ok=False))
 
+    def test_commit_policy_rejects_invalid_templates_and_patterns(self):
+        for config, expected in (
+                ('[commits]\ntemplate = "{summary.__class__}"\n', "only {kind} and {summary}"),
+                ('[commits]\ntemplate = "fixed"\n', "must contain {summary}"),
+                ('[commits]\npattern = "["\n', "unterminated"),
+                ('[commits]\nmessage = "typo"\n', "commits.message")):
+            with self.subTest(config=config):
+                self.repo.write("rkm/config.toml", config)
+                self.assertIn(expected, self.repo.run("conventions", ok=False))
+
     def test_skip_and_text_extensions(self):
         self.repo.write("rkm/config.toml", 'skip = ["vendor"]\ntext_extensions = [".okd"]\n')
         self.repo.run("index")

@@ -62,6 +62,72 @@ class BranchStorageTest(unittest.TestCase):
     def enable(self):
         return self.run_rkm("init", "--branch", "--workspace", self.workspace)
 
+    def commit_subject(self):
+        if self.backend == "jj":
+            return self.command("jj", "--ignore-working-copy", "log", "--no-graph", "-r", "_rkm",
+                                "-T", "description.first_line()").strip()
+        return self.command("git", "log", "-1", "--format=%s", "_rkm").strip()
+
+    def test_generated_commit_messages_infer_single_and_mixed_kinds(self):
+        self.enable()
+        self.assertEqual(self.commit_subject(), "docs(rkm): initialize repository knowledge")
+        self.new("a")
+        self.run_rkm("commit", "--summary", "add parser task")
+        self.assertEqual(self.commit_subject(), "docs(todo): add parser task")
+        self.run_rkm("new", "spec", "s", "--title", "Spec", "--description", "d")
+        self.new("b")
+        self.run_rkm("commit", "--summary", "record plan and tasks")
+        self.assertEqual(self.commit_subject(), "docs(rkm): record plan and tasks")
+        self.run_rkm("close", "a")
+        self.run_rkm("commit", "--summary", "close task", "--kind", "todo")
+        self.assertEqual(self.commit_subject(), "docs(todo): close task")
+        self.run_rkm("rm", "b")
+        self.run_rkm("commit", "--summary", "remove obsolete task")
+        self.assertEqual(self.commit_subject(), "docs(todo): remove obsolete task")
+
+    def test_custom_policy_is_used_for_migration_and_validates_before_commit(self):
+        self.run_rkm("init")
+        config = self.read("rkm/config.toml")
+        config += ('\n[commits]\ntemplate = "TEAM-42 docs({kind}): {summary}"\n'
+                   'guidance = "Messages must reference TEAM-42."\n'
+                   "pattern = 'TEAM-42 docs\\([a-z]+\\): .+'\n")
+        self.write("rkm/config.toml", config)
+        self.run_rkm("migrate", "--workspace", self.workspace)
+        self.assertEqual(self.commit_subject(), "TEAM-42 docs(rkm): migrate repository knowledge")
+        self.new("a")
+        before = self.commit_subject()
+        self.assertIn("TEAM-42", self.run_rkm("commit", "-m", "bad message", ok=False))
+        self.assertEqual(self.commit_subject(), before)
+        self.assertTrue(os.path.exists(os.path.join(self.workspace, "rkm/todos/a.md")))
+        self.run_rkm("commit", "--summary", "record task")
+        self.assertEqual(self.commit_subject(), "TEAM-42 docs(todo): record task")
+        conventions = self.run_rkm("conventions")
+        self.assertIn("Messages must reference TEAM-42", conventions)
+        self.assertIn("TEAM-42 docs({kind}): {summary}", conventions)
+        self.assertIn("Direct", conventions)
+
+    def test_complete_messages_remain_verbatim_and_seed_can_be_overridden(self):
+        self.run_rkm("init", "--branch", "--workspace", self.workspace, "-m", "TEAM-1 initialize notes")
+        self.assertEqual(self.commit_subject(), "TEAM-1 initialize notes")
+        self.new("a")
+        self.run_rkm("commit", "-m", "custom message\n\nRefs: TEAM-7")
+        self.assertEqual(self.commit_subject(), "custom message")
+        if self.backend == "jj":
+            message = self.command("jj", "--ignore-working-copy", "log", "--no-graph", "-r", "_rkm", "-T", "description")
+        else:
+            message = self.command("git", "log", "-1", "--format=%B", "_rkm")
+        self.assertEqual(message.strip(), "custom message\n\nRefs: TEAM-7")
+        self.assertIn("--kind", self.run_rkm("commit", "-m", "unchanged", "--kind", "todo", ok=False))
+
+    def test_migration_rejects_invalid_initial_message_before_moving_data(self):
+        self.run_rkm("init")
+        self.write("rkm/config.toml", self.read("rkm/config.toml") + "\n[commits]\npattern = 'TEAM-[0-9]+ .+'\n")
+        self.assertIn("commits.pattern", self.run_rkm("migrate", "--workspace", self.workspace, ok=False))
+        self.assertTrue(os.path.exists(os.path.join(self.root, "rkm")))
+        self.assertFalse(os.path.exists(self.workspace))
+        self.run_rkm("migrate", "--workspace", self.workspace, "-m", "TEAM-123 migrate repository knowledge")
+        self.assertEqual(self.commit_subject(), "TEAM-123 migrate repository knowledge")
+
     def test_requires_a_location_and_is_opt_in(self):
         self.assertIn("--workspace PATH", self.run_rkm("init", "--branch", ok=False))
         self.assertFalse(os.path.exists(self.workspace))
@@ -215,6 +281,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("process notes before working", agents)
         self.assertIn("rkm conventions", agents)
         self.assertIn("RKM_ACTOR", agents)
+        self.assertIn("Store todos, bugs, specs, decisions, roadmaps", agents)
         self.assertNotIn("| Directory |", agents)
         self.assertNotIn("rkm new todo", agents)
         self.assertNotIn(self.workspace, agents)

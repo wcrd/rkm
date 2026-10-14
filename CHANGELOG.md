@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-10-14
+
+- Recommend Conventional Commits for knowledge history. `commit --summary`
+  generates a message with an inferred kind (or `--kind`); complete `-m`
+  messages remain available.
+- Repository `[commits]` configuration supplies a template, guidance and an
+  optional validation pattern, including for initialization/migration commits.
+  Initial messages can be overridden with `-m`. Policy is shown by `conventions`.
+- The short agent bootstrap explicitly directs todos, bugs, specs, decisions,
+  roadmaps, process notes and contributor guides into RKM.
+
 ## 0.2.0 — 2026-10-13
 
 - Opt-in separate knowledge history: `init --branch --workspace PATH` and

@@ -16,7 +16,8 @@ in place. Each repository has its own rkm/config.toml.
   rkm workspace add [--workspace PATH]  reattach existing knowledge history
   rkm workspace remove            remove a clean checkout, retaining history
   rkm config [--workspace-root PATH]  view or save the global knowledge workspace parent
-  rkm commit -m MESSAGE           commit knowledge on its separate branch
+  rkm commit -m MESSAGE | --summary TEXT [--kind KIND]
+                                  commit knowledge using repository policy
   rkm new todo|bug|spec|decision|roadmap|process <slug> --title T --description D
   rkm adopt <path> <kind> --description D [--as ID]
                                    frontmatter for a file without it; a file
@@ -67,6 +68,7 @@ import json
 import os
 import re
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -76,7 +78,7 @@ if sys.version_info < (3, 11):
 
 import tomllib  # noqa: E402  (3.11+)
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 def has_bundle(d):
@@ -192,8 +194,31 @@ DEFAULT_TEMPLATES = {
 }
 
 
-CONFIG_KEYS = {"name", "intro", "requires", "skip", "text_extensions", "types"}
+CONFIG_KEYS = {"name", "intro", "requires", "skip", "text_extensions", "types", "commits"}
 TYPE_KEYS = {"dir", "section", "tracked", "template", "about"}
+COMMIT_KEYS = {"template", "guidance", "pattern"}
+
+
+def validate_commit_policy(policy):
+    if not isinstance(policy, dict):
+        raise ValueError("commits must be a table")
+    unknown = set(policy) - COMMIT_KEYS
+    if unknown:
+        raise ValueError("unknown key(s) " + ", ".join("commits." + k for k in sorted(unknown)))
+    for key, value in policy.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"commits.{key} must be a nonempty string")
+    if "template" in policy:
+        fields = []
+        for _, field, spec, conversion in string.Formatter().parse(policy["template"]):
+            if field is not None:
+                if field not in ("kind", "summary") or spec or conversion:
+                    raise ValueError("commits.template allows only {kind} and {summary}, without format modifiers")
+                fields.append(field)
+        if "summary" not in fields:
+            raise ValueError("commits.template must contain {summary}")
+    if "pattern" in policy:
+        re.compile(policy["pattern"])
 
 
 def load_config():
@@ -210,6 +235,10 @@ def load_config():
     unknown |= {f"types.{t}.{k}" for t, v in config.get("types", {}).items() for k in set(v) - TYPE_KEYS}
     if unknown:
         sys.exit(f"rkm: rkm/config.toml: unknown key(s) {', '.join(sorted(unknown))}")
+    try:
+        validate_commit_policy(config.get("commits", {}))
+    except (ValueError, re.error) as e:
+        sys.exit(f"rkm: rkm/config.toml: {e}")
     return config
 
 
@@ -543,7 +572,50 @@ def save_storage(backend, branch, workspace):
     BUNDLE = os.path.join(workspace, "rkm")
 
 
+def commit_message(summary=None, kind="rkm", message=None):
+    policy = CONFIG.get("commits", {})
+    if message is None:
+        if not summary or not summary.strip() or "\n" in summary or "\r" in summary:
+            raise Fail("commit summary must be a nonempty single line")
+        if not re.fullmatch(r"[a-z][a-z0-9_-]*", kind):
+            raise Fail("commit kind must be a lower-case name")
+        message = policy.get("template", "docs({kind}): {summary}").format(kind=kind, summary=summary.strip())
+    if not message or not message.splitlines()[0].strip():
+        raise Fail("commit message must have a nonempty subject")
+    if "pattern" in policy and not re.fullmatch(policy["pattern"], message):
+        raise Fail("commit message does not match commits.pattern; "
+                   + (policy.get("guidance") or "check the repository's commit policy in rkm/config.toml"))
+    return message
+
+
+def pending_commit_kind():
+    if STORAGE["backend"] == "jj":
+        lines = jj("diff", "--summary", "--from", f"bookmarks(exact:{json.dumps(BRANCH)})",
+                   "--to", "@", cwd=STORE_ROOT, snapshot=True).stdout.splitlines()
+        paths = [line[2:] for line in lines]
+    else:
+        paths = git("diff", "--name-only", "-z", "HEAD", "--", "rkm", cwd=STORE_ROOT).stdout.split("\0")
+        paths += git("ls-files", "--others", "--exclude-standard", "-z", "--", "rkm",
+                     cwd=STORE_ROOT).stdout.split("\0")
+    kinds = set()
+    for path in paths:
+        if not path.startswith("rkm/") or path in ("rkm/index.md", "rkm/log.md"):
+            continue
+        if not path.endswith(".md"):
+            kinds.add("rkm")
+            continue
+        try:
+            kinds.add(Doc(os.path.join(STORE_ROOT, path)).get("type").lower())
+        except (Fail, OSError, AttributeError):
+            # Deleted documents can still be classified by their configured directory.
+            matches = {t.lower() for t, v in TYPE_DEFS.items() if v.get("dir")
+                       and path.startswith("rkm/" + v["dir"].strip("/") + "/")}
+            kinds.update(matches or {"rkm"})
+    return next(iter(kinds)) if len(kinds) == 1 else "rkm"
+
+
 def commit_knowledge(message, backend, branch, workspace):
+    message = commit_message(message=message)
     if backend == "jj":
         jj("describe", "-m", message, cwd=workspace, snapshot=True)
         jj("bookmark", "set", branch, "-r", "@", cwd=workspace, snapshot=True)
@@ -597,6 +669,9 @@ def enable_branch(a, migrate=False):
         raise Fail(f"{branch} already exists; refusing to replace existing knowledge")
     if revision:
         validate_knowledge_revision(BACKEND, revision)
+    seed_message = None if revision else commit_message(
+        "migrate repository knowledge" if migrate else "initialize repository knowledge",
+        message=getattr(a, "message", None))
     if migrate:
         if os.path.islink(source):
             raise Fail("migration requires a real rkm/ directory, not a symbolic link")
@@ -642,8 +717,7 @@ def enable_branch(a, migrate=False):
             initialize_bundle(a)
         configure_bundle()
         if not revision:
-            commit_knowledge("Migrate repository knowledge" if migrate else "Initialize repository knowledge",
-                             BACKEND, branch, workspace)
+            commit_knowledge(seed_message, BACKEND, branch, workspace)
         elif BACKEND == "jj":
             jj("bookmark", "set", branch, "-r", revision, cwd=workspace)
         # Snapshot settings or ignore rules can omit files without failing a
@@ -1513,6 +1587,24 @@ def conventions_text(branch_mode=None):
             "  writes; coordinate simultaneous manual edits to the same file.\n"
             "- Run `rkm commit -m MESSAGE` to record knowledge changes. Push the knowledge\n"
             "  bookmark/branch separately; it is never merged into the code history.")
+    policy = CONFIG.get("commits", {})
+    text += ("\n## Knowledge commit messages\n\n"
+             "Prefer Conventional Commits for knowledge changes, for example\n"
+             "`docs(todo): add parser cleanup tasks`, `docs(bug): record invalid filter behaviour`,\n"
+             "or `docs(spec): define edge templates`. Recording a bug is a documentation\n"
+             "change; use `fix` for a code fix. Mixed knowledge changes use scope `rkm`.\n\n"
+             "Repository templates and guidance take precedence over these defaults.\n\n"
+             "Use `rkm commit --summary TEXT` to apply the configured template; RKM infers\n"
+             "the kind from changed documents, or accepts `--kind KIND`. A complete\n"
+             "`rkm commit -m MESSAGE` is preserved verbatim. In-tree bundles use your usual\n"
+             "VCS commit command, following the same policy.\n\n"
+             "Template: `" + policy.get("template", "docs({kind}): {summary}") + "`\n")
+    if policy.get("guidance"):
+        text += "\nRepository guidance: " + policy["guidance"] + "\n"
+    if policy.get("pattern"):
+        text += "\nValidation pattern (Python full match of the entire message): `" + policy["pattern"] + "`\n"
+    text += "\nRKM validates its own commits, including initialization and migration. Direct\n"
+    text += "jj/Git commits bypass this validation; remote branch rules still apply.\n"
     return text
 
 
@@ -1528,6 +1620,7 @@ def agents_bootstrap():
     text = """## Repository knowledge (RKM)
 
 This repository uses RKM for contributor and agent knowledge.
+Store todos, bugs, specs, decisions, roadmaps, process notes and contributor guides in RKM.
 Agents must set `RKM_ACTOR` to `<agent>/<model>` before running RKM commands.
 Run `rkm conventions` and follow its rules. Run `rkm path`, read the bundle's
 `index.md`, and consult relevant specs, decisions and process notes before working.
@@ -1586,8 +1679,10 @@ def update_agents():
         # Recognize an untouched section pasted from older `rkm conventions`.
         # Customized legacy prose remains intact; the new section explains
         # that all its RKM references use the external logical layout.
-        legacy = conventions_text(False).replace("\n", newline)
-        if legacy in content:
+        full_legacy = conventions_text(False)
+        candidates = (full_legacy, full_legacy.split("\n## Knowledge commit messages\n", 1)[0])
+        legacy = next((s.replace("\n", newline) for s in candidates if s.replace("\n", newline) in content), None)
+        if legacy is not None:
             updated = content.replace(legacy, block + newline, 1)
         else:
             separator = "" if not content or content.endswith(newline * 2) else (
@@ -1630,6 +1725,8 @@ def cmd_init(a):
         return
     if a.workspace:
         raise Fail("--workspace is for branch storage; also supply --branch")
+    if a.message:
+        raise Fail("--message is for the initial branch commit; also supply --branch")
     if BRANCH or has_bundle(REPO):
         raise Fail(f"{REPO} already has an rkm/ bundle")
     initialize_bundle(a)
@@ -1650,13 +1747,18 @@ def cmd_commit(a):
     if not BRANCH:
         raise Fail("`rkm commit` is for branch storage; commit an in-tree bundle with your usual VCS")
     actor()
+    if a.message is not None and a.kind is not None:
+        raise Fail("--kind is for --summary; a complete -m message is used unchanged")
+    message = commit_message(message=a.message) if a.message is not None else None
     if STORAGE["backend"] == "jj":
         files = jj("file", "list", cwd=STORE_ROOT, snapshot=True).stdout.splitlines()
     else:
         files = git("ls-files", cwd=STORE_ROOT).stdout.splitlines()
     if any(not f.startswith("rkm/") for f in files):
         raise Fail("knowledge workspace contains tracked files outside rkm/; refusing to commit")
-    commit_knowledge(a.message, STORAGE["backend"], BRANCH, STORE_ROOT)
+    if message is None:
+        message = commit_message(a.summary, kind=a.kind or pending_commit_kind())
+    commit_knowledge(message, STORAGE["backend"], BRANCH, STORE_ROOT)
     print(f"Recorded knowledge on {BRANCH}")
 
 
@@ -1727,14 +1829,19 @@ def main(argv=None):
     p.add_argument("--name", help="project name for the index intro (default: the directory name)")
     p.add_argument("--branch", nargs="?", const="_rkm", help="use separate history (default: _rkm)")
     p.add_argument("--workspace", help="knowledge workspace location (overrides the global RKM parent)")
+    p.add_argument("-m", "--message", help="complete message for the initial knowledge commit")
     p.set_defaults(fn=cmd_init)
     p = sub.add_parser("migrate")
     p.add_argument("--branch", default="_rkm", help="knowledge bookmark/branch (default: _rkm)")
     p.add_argument("--workspace", help="knowledge workspace location (overrides the global RKM parent)")
+    p.add_argument("-m", "--message", help="complete message for the migration commit")
     p.set_defaults(fn=cmd_migrate)
     sub.add_parser("path").set_defaults(fn=cmd_path)
     p = sub.add_parser("commit")
-    p.add_argument("-m", "--message", required=True)
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("-m", "--message", help="complete message, used unchanged")
+    group.add_argument("--summary", help="summary to render with the configured commit template")
+    p.add_argument("--kind", help="scope for --summary (default: inferred, or rkm for mixed changes)")
     p.set_defaults(fn=cmd_commit)
     p = sub.add_parser("config", help="view or save global RKM preferences")
     group = p.add_mutually_exclusive_group()

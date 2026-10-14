@@ -113,7 +113,7 @@ for link checks and rewrites.
 ```bash
 rkm path                        # absolute bundle path, for reading/editing bodies
 rkm new todo investigate --title "Investigate" --description "Why."
-rkm commit -m "Record investigation"
+rkm commit --summary "record investigation"
 ```
 
 Initialization and migration record the first knowledge commit. Subsequent
@@ -208,6 +208,49 @@ about = "Asks from users."       # its row in `rkm conventions`
 
 The default types are Spec, Decision, Roadmap, Bug, Todo, Process and Guide;
 `DEFAULT_TYPES` in `rkm.py` lists their settings.
+
+## Knowledge commit messages
+
+Conventional Commits are the default recommendation: `docs(todo): ...`,
+`docs(bug): ...`, `docs(spec): ...`, and `docs(rkm): ...` for mixed changes.
+Recording a bug is a documentation change; `fix` describes fixing code.
+
+```bash
+rkm commit --summary "record parser cleanup task"  # infer kind from changed documents
+rkm commit --summary "clarify grammar" --kind spec # choose the scope explicitly
+rkm commit -m "TEAM-123 docs(spec): clarify grammar" # complete message, passed unchanged
+```
+
+Changes to the generated index/log do not affect inferred kinds. Mixed kinds,
+configuration changes, or changes that cannot be classified use `rkm`.
+The summary is a single line; complete `-m` messages may include bodies and
+trailers. `--kind` is only used with `--summary`.
+
+Set a repository policy in the bundle's `rkm/config.toml`, raising its top-level
+`requires` to `"0.3"` when using this configuration:
+
+```toml
+[commits]
+template = "docs(rkm): [{kind}] {summary}"
+guidance = "Start the summary with an issue key, for example TEAM-123."
+pattern = 'docs\(rkm\): \[[a-z][a-z0-9_-]*\] TEAM-[0-9]+ .+'
+```
+
+`template` defaults to `docs({kind}): {summary}`. It accepts only `{kind}`
+and `{summary}`, without format modifiers, and must include `{summary}`.
+`guidance` is shown by `rkm conventions` for users and agents. The optional
+`pattern` is a Python regular expression matched against the entire message
+with `re.fullmatch`; include multiline handling if your policy allows bodies.
+Repository policy takes precedence over the default recommendation.
+
+Generated and explicit messages are validated before RKM commits them.
+Initialization and migration use the same policy with kind `rkm`; their first
+commit can be overridden with `init --branch -m MESSAGE` or
+`migrate -m MESSAGE`. An existing knowledge branch is attached without a new
+initialization commit. Direct jj/Git commits bypass RKM validation. Remote
+rules still apply and may use different regex syntax or additional constraints.
+For in-tree bundles, commit through your normal VCS using the policy shown
+by `rkm conventions`.
 
 ## Developing rkm
 

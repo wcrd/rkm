@@ -136,7 +136,7 @@ class RkmTest(unittest.TestCase):
 
     def test_check_finds_problems(self):
         self.new_todo()
-        self.repo.write("rkm/todos/bad.md", '---\ntype: Todo\ntitle: "Bad"\nstate: maybe\n---\n')
+        self.repo.write("rkm/todos/bad.md", '---\ntype: Todo\ntitle: "Bad"\ndescription: "TODO"\nstate: maybe\n---\n')
         self.repo.write("rkm/todos/done/old.md", '---\ntype: Todo\ntitle: "O"\ndescription: "d"\nstate: done\n---\n')
         self.repo.write("rkm/spec/x.md", '---\ntype: Widget\ntitle: "X"\ndescription: "d"\n---\n'
                         "[gone](../todos/gone.md)\n")
@@ -155,6 +155,34 @@ class RkmTest(unittest.TestCase):
         self.repo.run("new", "todo", "a", "--title", "A", "--description", "d",
                       actor="claude/opus-5.5", agent=True)
         self.assertIn("by: claude/opus-5.5", self.repo.read("rkm/todos/a.md"))
+
+    def test_description_is_optional_for_people_only(self):
+        self.repo.run("new", "todo", "a", "--title", "A")
+        text = self.repo.read("rkm/todos/a.md")
+        self.assertNotIn("description:", text)
+        self.assertIn("* [A](todos/a.md)\n", self.repo.read("rkm/index.md"))
+        self.repo.run("new", "todo", "p", "--title", "P", actor="process:nightly")
+        out = self.repo.run("new", "todo", "b", "--title", "B", actor="claude/opus-5.5",
+                            agent=True, ok=False)
+        self.assertIn("must pass --description", out)
+        self.repo.run("new", "todo", "c", "--title", "C", actor="claude/opus-5.5", ok=False)
+        self.assertFalse(self.repo.exists("rkm/todos/b.md"))
+        self.repo.write("rkm/todos/bare.md", "# Bare\n")
+        self.repo.run("adopt", "todos/bare", "todo", actor="claude/opus-5.5", agent=True, ok=False)
+        self.repo.run("adopt", "todos/bare", "todo")
+        self.assertIn("all conformant", self.repo.run("check"))
+
+    def test_slug_derived_from_title(self):
+        out = self.repo.run("new", "todo", "--title", "Replace the Régex engine (v2)!")
+        self.assertIn("todos/replace-the-regex-engine-v2.md", out)
+        self.repo.run("new", "spec", "--title", "A" * 20 + " " + "b" * 20 + " " + "c" * 20)
+        self.assertTrue(self.repo.exists("rkm/spec/" + "a" * 20 + "-" + "b" * 20 + ".md"))
+        out = self.repo.run("new", "bug", "--title", "Replace the regex engine v2", ok=False)
+        self.assertIn("is taken by todos/replace-the-regex-engine-v2; is it the same item?", out)
+        self.repo.run("new", "todo", "--title", "!!!", ok=False)
+        self.repo.run("new", "decision", "--title", "05 Things")
+        self.assertTrue(self.repo.exists("rkm/decisions/01-05-things.md"))
+        self.repo.run("check")
 
     def test_only_a_human_verifies(self):
         self.new_todo()

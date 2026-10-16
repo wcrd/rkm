@@ -6,6 +6,12 @@
   the table and in `--json`. `--all` (`-a`) shows everything, and
   `--state done` or `--status deprecated` still list those documents. On a
   terminal, a note on stderr counts what was hidden.
+- `new` derives the slug from `--title` when none is given (lower-case ASCII,
+  hyphenated, cut at a word boundary near 50 characters). A derived slug that
+  is already taken is refused rather than numbered; pass one explicitly.
+- `description` is optional for people: `new` and `adopt` accept no
+  `--description`, `check` accepts its absence, and the index line drops its
+  ` - `. Agents must still pass one.
 
 ## 0.3.0 — 2026-10-14
 

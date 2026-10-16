@@ -18,8 +18,9 @@ in place. Each repository has its own rkm/config.toml.
   rkm config [--workspace-root PATH]  view or save the global knowledge workspace parent
   rkm commit -m MESSAGE | --summary TEXT [--kind KIND]
                                   commit knowledge using repository policy
-  rkm new todo|bug|spec|decision|roadmap|process <slug> --title T --description D
-  rkm adopt <path> <kind> --description D [--as ID]
+  rkm new todo|bug|spec|decision|roadmap|process [<slug>] --title T [--description D]
+                                   the slug defaults to one made from the title
+  rkm adopt <path> <kind> [--description D] [--as ID]
                                    frontmatter for a file without it; a file
                                    outside rkm/ moves in, its links rewritten
   rkm close <id> [--note N]        state: done, closed stamped
@@ -74,6 +75,7 @@ import string
 import subprocess
 import sys
 import tempfile
+import unicodedata
 
 if sys.version_info < (3, 11):
     sys.exit(f"rkm needs Python 3.11 or newer; this is {sys.version.split()[0]}")
@@ -974,6 +976,16 @@ def stamp():
     return {"by": actor(), "at": now()}
 
 
+def describe(description):
+    """The description to write, or None. People may leave it out; an agent
+    writes one, since the index line is what lets the next reader choose."""
+    d = (description or "").strip() or None
+    who = actor()  # also refuses a bad actor
+    if d is None and (is_agent() or not who.startswith(("human:", "process:", "team:"))):
+        raise Fail("an agent must pass --description: one sentence for the index")
+    return d
+
+
 def log(kind, doc, note=None):
     log_entry(f"* **{kind}**: [{doc.get('title') or doc.id}]({doc.rel})"
               + (f": {note}" if note else "") + f" ({actor()})")
@@ -1030,7 +1042,8 @@ def render_index(docs):
             mark = " (draft)" if d.get("status") == "draft" else ""
             if name == "Closed":
                 mark = f" ({d.get('type').lower()})"
-            lines.append(f"* [{d.get('title') or d.id}]({d.rel}){mark} - {d.get('description', '')}")
+            desc = d.get("description")
+            lines.append(f"* [{d.get('title') or d.id}]({d.rel}){mark}" + (f" - {desc}" if desc else ""))
         lines.append("")
     return "\n".join(lines)
 
@@ -1127,30 +1140,49 @@ def rewrite_links(content, f_old, f_new, old, new):
 
 # --- commands ---------------------------------------------------------------
 
+def slugify(title):
+    """`Replace regexlite (v2)` -> `replace-regexlite-v2`, cut at a word
+    boundary so the path stays short."""
+    s = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode().lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    if len(s) > 50:
+        s = s[:51].rsplit("-", 1)[0] if "-" in s[:51] else s[:50]
+    return s
+
+
 def cmd_new(a):
     if a.kind not in KINDS:
         raise Fail(f"kind must be one of {', '.join(KINDS)}")
+    derived = not a.slug
+    if derived:
+        a.slug = slugify(a.title)
+        if not a.slug:
+            raise Fail("no slug can be derived from the title; pass one")
     if not SLUG.match(a.slug):
         raise Fail("slug is lower-case letters, digits, - and _")
     t, d = KINDS[a.kind]
-    if t == "Decision" and not re.match(r"^\d\d-", a.slug):
+    if t == "Decision" and (derived or not re.match(r"^\d\d-", a.slug)):
         taken = [int(f[:2]) for f in os.listdir(os.path.join(BUNDLE, d))
                  if re.match(r"^\d\d-.*\.md$", f)] if os.path.isdir(os.path.join(BUNDLE, d)) else []
         a.slug = f"{max(taken, default=0) + 1:02d}-{a.slug}"
     path = os.path.join(BUNDLE, d, a.slug + ".md")
+    # A derived slug that is taken is refused, not numbered: the same title
+    # is usually the same item, and a slug is a path, which is permanent.
+    hint = "; is it the same item? If not, pass a slug" if derived else ""
     if os.path.exists(path):
-        raise Fail(f"{bundle_rel(path)} exists")
+        raise Fail(f"{bundle_rel(path)} exists{hint}")
     hits = [p for p in concept_paths() if os.path.basename(p) == a.slug + ".md"]
     if hits:
-        raise Fail(f"slug {a.slug} is taken by {os.path.relpath(hits[0], BUNDLE)[:-3]}")
+        raise Fail(f"slug {a.slug} is taken by {os.path.relpath(hits[0], BUNDLE)[:-3]}{hint}")
     generated = stamp()  # refuses a bad actor before anything is written
+    description = describe(a.description)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     body = f"# {a.title}\n\n" + TEMPLATES.get(t, "")
     with open(path, "w", encoding="utf-8") as f:
         f.write("---\ntype: " + t + "\n---\n" + body)
     doc = Doc(path)
     doc.set("title", a.title)
-    doc.set("description", a.description)
+    doc.set("description", description)
     if t in TRACKED:
         doc.set("state", "open")
     if a.draft:
@@ -1201,7 +1233,7 @@ def cmd_adopt(a):
     title = a.title or (h1.group(1).strip() if h1 else None)
     if not title:
         raise Fail("no `# ` heading to take the title from; pass --title")
-    actor()  # refuses a bad actor before anything is written
+    description = describe(a.description)  # refuses a bad actor before anything is written
     if t == "Decision" and not (a.decided and DATE.match(a.decided)):
         raise Fail("a Decision needs --decided YYYY-MM-DD")
     if outside:
@@ -1211,7 +1243,7 @@ def cmd_adopt(a):
         f.write("---\ntype: " + t + "\n---\n" + text)
     doc = Doc(path)
     doc.set("title", title)
-    doc.set("description", a.description)
+    doc.set("description", description)
     if t in TRACKED:
         doc.set("state", a.state)
     if t == "Decision":
@@ -1448,6 +1480,8 @@ def problems():
             bad(f"type {t!r} is not one of {', '.join(sorted(TYPES))}")
         for k in ("title", "description"):
             v = d.get(k)
+            if k == "description" and "description" not in d.values:
+                continue  # optional; agents are made to write one
             if not isinstance(v, str) or not v.strip() or v == "TODO":
                 bad(f"no `{k}`")
         if t in TRACKED:
@@ -1527,7 +1561,7 @@ knowledge management), listed in [rkm/index.md](rkm/index.md):
 | `rkm/archive/` | any, `status: deprecated` | History. Don't treat it as current. |
 
 `rkm/` is an [Open Knowledge Format v0.2]({okf})
-bundle: every file opens with frontmatter (`type`, `title`, `description`,
+bundle: every file opens with frontmatter (`type`, `title`, usually `description`,
 `state` for todos and bugs, and who wrote and reviewed it), `rkm/index.md` lists
 them, and `rkm/log.md` records each change. `rkm/config.toml` says which types
 the bundle uses beyond rkm's defaults, which trees rkm leaves alone, and the
@@ -1544,7 +1578,7 @@ that doesn't is refused.
 
 ```bash
 export RKM_ACTOR=claude/opus-5.5          # <agent>/<model>
-rkm new todo regex-engine-swap --title "Replace regexlite" --description "One sentence."
+rkm new todo --title "Regex engine swap" --description "One sentence."  # todos/regex-engine-swap
 rkm new bug  lsp-crash-on-empty  --title "…" --description "…"   # Repro / Expected / Actual
 rkm new decision closed-by-default --title "…" --description "…"  # numbered, dated
 rkm close regex-engine-swap --note "landed in feat/regex"
@@ -1567,6 +1601,8 @@ rkm check                         # conformance: frontmatter, links, index
   (`draft`, `stable`, `deprecated`); a todo's progress is `state`.
 - **`verify` is a human sign-off.** rkm refuses it from an agent. A file only
   an agent wrote, with no `verified`, is unreviewed; say so when you rely on it.
+- **An agent always writes a `description`.** It is the index line the next
+  reader chooses by. A person may leave it out; rkm refuses that from an agent.
 - Link between files with relative links, not `/`-rooted ones, so they work on
   GitHub and in the editor.
 """
@@ -1830,16 +1866,16 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("new")
     p.add_argument("kind")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", help="default: derived from the title")
     p.add_argument("--title", required=True)
-    p.add_argument("--description", required=True)
+    p.add_argument("--description", help="required from an agent")
     p.add_argument("--draft", action="store_true")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("adopt")
     p.add_argument("path")
     p.add_argument("kind")
     p.add_argument("--title")
-    p.add_argument("--description", required=True)
+    p.add_argument("--description", help="required from an agent")
     p.add_argument("--state", choices=STATES, default="open")
     p.add_argument("--decided", help="for a Decision: YYYY-MM-DD")
     p.add_argument("--as", dest="as_", metavar="ID", help="where a file from outside rkm/ goes")

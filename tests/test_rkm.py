@@ -2,6 +2,7 @@
 
   python3 -m unittest discover -s tests
 """
+import json
 import os
 import re
 import subprocess
@@ -233,6 +234,26 @@ class RkmTest(unittest.TestCase):
         self.assertIn("todos/a", out)
         self.assertNotIn("todos/b", out)
 
+    def test_ls_hides_closed_and_deprecated(self):
+        self.new_todo("a")
+        self.new_todo("b")
+        self.repo.run("close", "b")
+        self.repo.run("new", "spec", "old", "--title", "O", "--description", "d")
+        self.repo.run("status", "old", "deprecated")
+        out = self.repo.run("ls")
+        self.assertIn("todos/a", out)
+        self.assertNotIn("todos/b", out)
+        self.assertNotIn("spec/old", out)
+        self.assertEqual([d["id"] for d in json.loads(self.repo.run("ls", "--json"))],
+                         ["todos/a"])
+        out = self.repo.run("ls", "--all")
+        self.assertIn("todos/b", out)
+        self.assertIn("spec/old", out)
+        self.assertEqual(len(json.loads(self.repo.run("ls", "-a", "--json"))), 3)
+        # A filter that names the hidden value asks for it.
+        self.assertEqual(self.repo.run("ls", "--state", "done").split()[0], "todos/b")
+        self.assertEqual(self.repo.run("ls", "--status", "deprecated").split()[0], "spec/old")
+
     def test_ls_columns(self):
         self.new_todo("a")
         self.repo.run("new", "spec", "a-much-longer-spec", "--title", "S", "--description", "d",
@@ -251,15 +272,19 @@ class RkmTest(unittest.TestCase):
     def test_ls_header_on_tty(self):
         import pty
         self.new_todo("a")
+        self.new_todo("b")
+        self.repo.run("close", "b")
         leader, follower = pty.openpty()
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "RKM_ACTOR")}
         env.update(RKM_ROOT=self.repo.root, RKM_NOW=NOW)
-        subprocess.run([sys.executable, "-I", RKM, "ls"], env=env, stdout=follower, check=True)
+        subprocess.run([sys.executable, "-I", RKM, "ls"], env=env, stdout=follower,
+                       stderr=follower, check=True)
         out = os.read(leader, 65536).decode()  # macOS drops it once the follower closes
         os.close(follower)
         os.close(leader)
         self.assertRegex(out.splitlines()[0], r"^ID +TYPE +STATE +TITLE")
         self.assertIn("todos/a", out.splitlines()[1])
+        self.assertIn("1 closed or deprecated hidden; --all shows them", out)
 
 
 def source(path):

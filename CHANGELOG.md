@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `ls` hides closed (`state: done`) and deprecated documents by default, in
+  the table and in `--json`. `--all` (`-a`) shows everything, and
+  `--state done` or `--status deprecated` still list those documents. On a
+  terminal, a note on stderr counts what was hidden.
+
 ## 0.3.0 — 2026-10-14
 
 - Existing-repo `init --branch` and `agents --write` report the exact AGENTS.md

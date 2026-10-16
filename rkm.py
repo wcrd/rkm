@@ -31,7 +31,9 @@ in place. Each repository has its own rkm/config.toml.
   rkm verify <id>                  human sign-off; refused for agents
   rkm mv <id> <new-id>             rename and rewrite every link to it
   rkm rm <id>                      delete; refused while anything links to it
-  rkm ls [--type T] [--state S] [--status S] [--json]
+  rkm ls [--type T] [--state S] [--status S] [--all] [--json]
+                                  closed and deprecated are hidden without
+                                  --all or a --state/--status asking for them
   rkm index                        regenerate rkm/index.md
   rkm check                        conformance; run it as a CI gate
   rkm conventions                  the full RKM rules and command examples
@@ -1387,13 +1389,20 @@ def cmd_rm(a):
 
 
 def cmd_ls(a):
-    rows = []
+    # Closed and deprecated documents are history, so they are hidden unless
+    # --all is given or a --state or --status filter asks for them by name.
+    rows, hidden = [], 0
     for d in load_all():
         if a.type and d.get("type", "").lower() != a.type.lower():
             continue
         if a.state and d.get("state") != a.state:
             continue
         if a.status and (d.get("status") or "stable") != a.status:
+            continue
+        section = section_of(d)
+        if not a.all and (section == "Closed" and not a.state
+                          or section == "Deprecated" and not a.status):
+            hidden += 1
             continue
         rows.append(d)
     if a.json:
@@ -1411,6 +1420,8 @@ def cmd_ls(a):
     widths = [max((len(r[i]) for r in table), default=0) for i in range(3)]
     for r in table:
         print("  ".join(c.ljust(w) for c, w in zip(r, widths)), r[3], sep="  ")
+    if hidden and sys.stdout.isatty():
+        print(f"{hidden} closed or deprecated hidden; --all shows them", file=sys.stderr)
 
 
 def cmd_index(a):
@@ -1545,7 +1556,7 @@ rkm mv <id> <new-id>              # renames and rewrites every link to it
 rkm rm <id>                       # refused while anything links to it
 rkm adopt <path> <kind> --description "…"  # a file that arrived without frontmatter
 rkm adopt notes/x.md process --description "…"   # moves it in from outside rkm/, rewriting links
-rkm ls --type bug --state open
+rkm ls --type bug                 # current only; --all adds closed and deprecated
 rkm check                         # conformance: frontmatter, links, index
 ```
 
@@ -1867,6 +1878,8 @@ def main(argv=None):
     p.add_argument("--type")
     p.add_argument("--state", choices=STATES)
     p.add_argument("--status", choices=STATUSES)
+    p.add_argument("-a", "--all", action="store_true",
+                   help="include closed and deprecated documents")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_ls)
     sub.add_parser("index").set_defaults(fn=cmd_index)

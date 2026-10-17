@@ -1,16 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-17
 
-- Request is a default type (`rkm/requests/`, "Open requests"): what this repo
-  wants from another repo or team. `new --to repo:org/name` names who, `set
-  <id> to` changes it, and its states are `open`, `asked`, `done`. A bundle
-  that already defines Request keeps its settings, but its "Open requests"
-  section moves after "Open todos": run `rkm index` once after upgrading, or
-  `check` reports the index out of date.
-- A type may list its own `states` in config, from `open` to `done`.
-  `rkm state <id> <state>` moves an item through the states between; `check`
-  and `adopt --state` accept the type's states.
+Storage
 
 - **Branch storage is the default.** Plain `rkm init` creates the orphan
   `_rkm` knowledge branch (a jj workspace, else a Git worktree) and writes
@@ -23,40 +15,39 @@
   `workspace add` and new-clone setup check knowledge out beside the
   repository, in `../<repo>-rkm`. The global root stays optional and
   recommended; `rkm config` no longer says `--workspace` is needed without
-  it. The agent bootstrap and `rkm conventions` drop that requirement too;
-  refresh AGENTS.md blocks with `rkm agents --write`.
+  it.
+- `init` in an existing repository and `agents --write` report the exact
+  AGENTS.md path and whether the managed section was updated or was already
+  current.
+
+Documents
+
+- Request is a default type (`rkm/requests/`, "Open requests"): what this repo
+  wants from another repo or team. `new --to repo:org/name` names who, `set
+  <id> to` changes it, and its states are `open`, `asked`, `done`. A bundle
+  that already defines Request keeps its settings, but its "Open requests"
+  section moves after "Open todos": run `rkm index` once after upgrading, or
+  `check` reports the index out of date.
+- A type may list its own `states` in config, from `open` to `done`.
+  `rkm state <id> <state>` moves an item through the states between; `check`
+  and `adopt --state` accept the type's states.
 - Items record where they were asked for in an optional `from` list: links or
   `prefix:name` labels such as `app:slack` or `repo:org/name`. `new` and
   `adopt` take `--from` for the first; `rkm from <id> <origin>` adds each later
   requester without restamping `generated`, and logs it as a **Request**.
   `check` validates the entries and refuses duplicates.
-- The agent bootstrap and `rkm conventions` say plainly to commit knowledge
-  changes with `rkm commit` before finishing, in the session that made them.
-  In-tree bootstraps say to commit `rkm/` with the code it describes. Refresh
-  existing AGENTS.md blocks with `rkm agents --write`.
-- `ls` hides closed (`state: done`) and deprecated documents by default, in
-  the table and in `--json`. `--all` (`-a`) shows everything, and
-  `--state done` or `--status deprecated` still list those documents. On a
-  terminal, a note on stderr counts what was hidden.
 - `new` derives the slug from `--title` when none is given (lower-case ASCII,
   hyphenated, cut at a word boundary near 50 characters). A derived slug that
   is already taken is refused rather than numbered; pass one explicitly.
 - `description` is optional for people: `new` and `adopt` accept no
   `--description`, `check` accepts its absence, and the index line drops its
   ` - `. Agents must still pass one.
+- `ls` hides closed (`state: done`) and deprecated documents by default, in
+  the table and in `--json`. `--all` (`-a`) shows everything, and
+  `--state done` or `--status deprecated` still list those documents. On a
+  terminal, a note on stderr counts what was hidden.
 
-## 0.3.0 — 2026-10-14
-
-- Existing-repo `init --branch` and `agents --write` report the exact AGENTS.md
-  path and whether the managed section was updated or was already current.
-
-- Clarify external, shared knowledge storage in the agent bootstrap, with
-  backend-specific locate/search/status commands, the shared-commit warning,
-  completion references, and accurate checkout recovery instructions.
-- Add repository `push_policy` guidance, shown in both agent instructions and
-  conventions; the default is to push only when explicitly authorized.
-- Expand conventions with document-lifecycle versus workspace-status guidance
-  and the detailed shared-workspace workflow.
+Commits and agents
 
 - Recommend Conventional Commits for knowledge history. `commit --summary`
   generates a message with an inferred kind (or `--kind`); complete `-m`
@@ -64,8 +55,20 @@
 - Repository `[commits]` configuration supplies a template, guidance and an
   optional validation pattern, including for initialization/migration commits.
   Initial messages can be overridden with `-m`. Policy is shown by `conventions`.
+- Add repository `push_policy` guidance, shown in both agent instructions and
+  conventions; the default is to push only when explicitly authorized.
+- The agent bootstrap and `rkm conventions` say plainly to commit knowledge
+  changes with `rkm commit` before finishing, in the session that made them.
+  In-tree bootstraps say to commit `rkm/` with the code it describes.
 - The short agent bootstrap explicitly directs todos, bugs, specs, decisions,
-  roadmaps, process notes and contributor guides into RKM.
+  roadmaps, process notes and contributor guides into RKM, and clarifies
+  external, shared knowledge storage: backend-specific locate/search/status
+  commands, the shared-commit warning, completion references, and checkout
+  recovery.
+- Expand conventions with document-lifecycle versus workspace-status guidance
+  and the detailed shared-workspace workflow.
+- Refresh existing AGENTS.md blocks with `rkm agents --write` after
+  upgrading.
 
 ## 0.2.0 — 2026-10-13
 

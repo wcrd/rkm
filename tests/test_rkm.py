@@ -2,6 +2,7 @@
 
   python3 -m unittest discover -s tests
 """
+import html
 import json
 import os
 import re
@@ -532,6 +533,18 @@ class InitTest(unittest.TestCase):
         self.assertIn("| `rkm/requests/` | `Request` | Asks from users. |", out)
         self.assertIn("| `rkm/todos/` | `Todo` | Planned work, one item per file. |", out)
         self.assertNotIn("{", out.split("```")[0])
+
+
+class SiteTest(unittest.TestCase):
+    def test_landing_page_lists_every_command(self):
+        page = html.unescape(source(os.path.join(os.path.dirname(RKM), "site", "index.html")))
+        usage = subprocess.run([sys.executable, RKM, "--help"], capture_output=True, text=True, check=True).stdout
+        commands = re.search(r"\{([a-z,]+)\}", usage).group(1).split(",")
+        commands.remove("workspace")
+        commands += ["workspace add", "workspace remove", "init --in-tree"]
+        reference = page.split('<section id="reference">', 1)[1].split("</section>", 1)[0]
+        missing = [c for c in commands if f"<code>rkm {c}" not in reference]
+        self.assertEqual(missing, [], "add these to the reference in site/index.html")
 
 
 if __name__ == "__main__":

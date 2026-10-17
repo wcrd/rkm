@@ -60,7 +60,7 @@ class BranchStorageTest(unittest.TestCase):
         return self.run_rkm("new", "todo", slug, "--title", slug, "--description", "d", cwd=cwd)
 
     def enable(self):
-        return self.run_rkm("init", "--branch", "--workspace", self.workspace)
+        return self.run_rkm("init", "--workspace", self.workspace)
 
     def commit_subject(self):
         if self.backend == "jj":
@@ -86,7 +86,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertEqual(self.commit_subject(), "docs(todo): remove obsolete task")
 
     def test_custom_policy_is_used_for_migration_and_validates_before_commit(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         config = self.read("rkm/config.toml")
         config += ('\n[commits]\ntemplate = "TEAM-42 docs({kind}): {summary}"\n'
                    'guidance = "Messages must reference TEAM-42."\n'
@@ -120,7 +120,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("--kind", self.run_rkm("commit", "-m", "unchanged", "--kind", "todo", ok=False))
 
     def test_migration_rejects_invalid_initial_message_before_moving_data(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.write("rkm/config.toml", self.read("rkm/config.toml") + "\n[commits]\npattern = 'TEAM-[0-9]+ .+'\n")
         self.assertIn("commits.pattern", self.run_rkm("migrate", "--workspace", self.workspace, ok=False))
         self.assertTrue(os.path.exists(os.path.join(self.root, "rkm")))
@@ -128,13 +128,29 @@ class BranchStorageTest(unittest.TestCase):
         self.run_rkm("migrate", "--workspace", self.workspace, "-m", "TEAM-123 migrate repository knowledge")
         self.assertEqual(self.commit_subject(), "TEAM-123 migrate repository knowledge")
 
-    def test_requires_a_location_and_is_opt_in(self):
-        self.assertIn("--workspace PATH", self.run_rkm("init", "--branch", ok=False))
-        self.assertFalse(os.path.exists(self.workspace))
-        self.run_rkm("init")
+    def test_default_init_checks_out_knowledge_beside_the_repository(self):
+        self.assertIn("beside each repository", self.run_rkm("config"))
+        before = self.command("git", "rev-parse", "HEAD").strip()
+        self.assertIn(f"({self.backend})", self.run_rkm("init"))
+        sibling = os.path.realpath(os.path.join(self.tmp.name, "widgets-rkm"))
+        self.assertEqual(self.run_rkm("path").strip(), os.path.join(sibling, "rkm"))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "rkm")))
+        self.assertIn('<!-- rkm:branch "_rkm" -->', self.read("AGENTS.md"))
+        self.assertEqual(self.command("git", "rev-parse", "HEAD").strip(), before)
+        self.assertIn("already up to date", self.run_rkm("init"))
+        self.assertIn("already has", self.run_rkm("init", "--in-tree", ok=False))
+
+    def test_in_tree_is_opt_in_and_migrates_beside_the_repository(self):
+        self.run_rkm("init", "--in-tree")
         self.assertTrue(os.path.exists(os.path.join(self.root, "rkm/config.toml")))
         self.assertEqual(self.run_rkm("path").strip(), os.path.join(self.root, "rkm"))
-        self.assertIn("migrate", self.enable_failure())
+        self.assertIn("rkm migrate", self.enable_failure())
+        self.assertIn("rkm migrate", self.run_rkm("init", ok=False))
+        self.new("a")
+        self.run_rkm("migrate")
+        sibling = os.path.realpath(os.path.join(self.tmp.name, "widgets-rkm"))
+        self.assertEqual(self.run_rkm("path").strip(), os.path.join(sibling, "rkm"))
+        self.assertIn("todos/a", self.run_rkm("ls"))
 
     def enable_failure(self):
         return self.run_rkm("init", "--branch", "--workspace", self.workspace, ok=False)
@@ -167,7 +183,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertNotIn(self.workspace, conventions)  # no clone-specific paths in AGENTS.md
 
     def test_migration_preserves_uncommitted_notes_and_links(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.new("a")
         self.write("README.md", "[A](rkm/todos/a.md)\n")
         self.write("notes/process.md", "# Process\n[code](../README.md)\n")
@@ -218,7 +234,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "rkm")))
 
     def test_migration_refuses_conflict_markers(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.write("rkm/spec/conflicted.md", "<<<<<<< Conflict 1\n=======\n>>>>>>> Conflict 1 ends\n")
         out = self.run_rkm("migrate", "--workspace", self.workspace, ok=False)
         self.assertIn("resolve", out)
@@ -300,7 +316,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertTrue(updated.startswith("# Existing instructions\n\nUse nextest.\n\n"))
         self.assertTrue(updated.endswith("\n## Extra\nKeep this.\n"))
         self.assertEqual(updated.count("<!-- rkm:begin -->"), 1)
-        out = self.run_rkm("init", "--branch")
+        out = self.run_rkm("init")
         self.assertIn("already up to date", out)
         self.assertIn(os.path.join(self.root, "AGENTS.md"), out)
         self.assertEqual(self.read("AGENTS.md"), updated)
@@ -311,7 +327,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertEqual(self.read("AGENTS.md"), updated)
 
     def test_migration_replaces_standard_legacy_conventions(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.write("AGENTS.md", "# Project\n\n" + self.run_rkm("conventions") + "\n## Tests\nUse nextest.\n")
         self.run_rkm("migrate", "--workspace", self.workspace)
         agents = self.read("AGENTS.md")
@@ -373,7 +389,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("RKM paths elsewhere in this file", self.read("AGENTS.md"))
 
     def test_malformed_agents_markers_refuse_migration_without_moving_notes(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.write("AGENTS.md", "# Project\n<!-- rkm:begin -->\nUnfinished.\n")
         out = self.run_rkm("migrate", "--workspace", self.workspace, ok=False)
         self.assertIn("malformed", out)
@@ -418,8 +434,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertIn("fetch", self.run_rkm("ls", ok=False))
         self.assertFalse(os.path.exists(self.workspace))
 
-    def test_new_clone_discovers_agents_and_bootstraps_existing_history(self):
-        self.enable()
+    def advertise_and_clone(self):
         self.new("a")
         self.run_rkm("commit", "-m", "Save knowledge")
         if self.backend == "jj":
@@ -433,6 +448,11 @@ class BranchStorageTest(unittest.TestCase):
         self.command("git", "clone", "--branch", "main", self.root, clone)
         if self.backend == "jj":
             self.command("jj", "git", "init", "--colocate", cwd=clone)
+        return clone
+
+    def test_new_clone_discovers_agents_and_bootstraps_existing_history(self):
+        self.enable()
+        clone = self.advertise_and_clone()
         parent = os.path.realpath(os.path.join(self.tmp.name, "global-knowledge"))
         self.run_rkm("config", "--workspace-root", parent, cwd=clone)
         printed = subprocess.run([sys.executable, "-I", RKM, "agents"], cwd=clone,
@@ -443,6 +463,15 @@ class BranchStorageTest(unittest.TestCase):
         self.assertTrue(self.run_rkm("path", cwd=clone).strip().startswith(parent + os.sep))
         self.assertFalse(os.path.exists(os.path.join(clone, "rkm")))
 
+    def test_new_clone_init_attaches_the_declared_branch_beside_it(self):
+        self.run_rkm("init", "--branch", "notes", "--workspace", self.workspace)
+        clone = self.advertise_and_clone()
+        self.run_rkm("init", cwd=clone)
+        self.assertEqual(self.run_rkm("path", cwd=clone).strip(),
+                         os.path.join(os.path.realpath(self.tmp.name), "auto-clone-rkm", "rkm"))
+        self.assertIn("todos/a", self.run_rkm("ls", cwd=clone))
+        self.assertIn('<!-- rkm:branch "notes" -->', self.read("AGENTS.md", root=clone))
+
     def test_global_parent_is_saved_and_used_only_for_knowledge(self):
         parent = os.path.realpath(os.path.join(self.tmp.name, "all-knowledge"))
         config_path = os.path.join(self.env["XDG_CONFIG_HOME"], "rkm/config.toml")
@@ -451,7 +480,7 @@ class BranchStorageTest(unittest.TestCase):
         with open(config_path) as f:
             self.assertIn(parent, f.read())
         self.assertIn(parent, self.run_rkm("config", cwd=self.tmp.name))
-        self.run_rkm("init", "--branch")
+        self.run_rkm("init")
         bundle = self.run_rkm("path").strip()
         self.assertEqual(os.path.dirname(os.path.dirname(bundle)), parent)
         self.assertTrue(os.path.basename(os.path.dirname(bundle)).startswith("widgets-"))
@@ -467,7 +496,7 @@ class BranchStorageTest(unittest.TestCase):
     def test_explicit_workspace_overrides_global_parent(self):
         parent = os.path.join(self.tmp.name, "global-parent")
         self.run_rkm("config", "--workspace-root", parent)
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.new("a")
         self.run_rkm("migrate", "--workspace", self.workspace)
         self.assertEqual(self.run_rkm("path").strip(), os.path.join(self.workspace, "rkm"))
@@ -476,7 +505,7 @@ class BranchStorageTest(unittest.TestCase):
     def test_global_parent_separates_same_named_repositories(self):
         parent = os.path.realpath(os.path.join(self.tmp.name, "all-knowledge"))
         self.run_rkm("config", "--workspace-root", parent)
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.new("a")
         self.run_rkm("migrate")
         first = self.run_rkm("path").strip()
@@ -492,7 +521,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertEqual(self.run_rkm("path").strip(), first)
 
     def test_failure_recording_migration_keeps_original_notes(self):
-        self.run_rkm("init")
+        self.run_rkm("init", "--in-tree")
         self.new("a")
         original = self.read("rkm/todos/a.md")
         if self.backend == "git":

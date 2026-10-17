@@ -9,25 +9,28 @@ One file, Python 3.11+ standard library only. It lives in its own repository
 and is installed from there with `uv tool install`; `python3 rkm.py` runs it
 in place. Each repository has its own rkm/config.toml.
 
-  rkm init [--name N] [--branch [B]] [--workspace PATH]
-                                  start a bundle (default branch: _rkm)
-  rkm migrate [--workspace PATH]  move a bundle to _rkm (jj preferred, else git)
+  rkm init [--name N] [--branch B] [--workspace PATH]
+                                  start a bundle on _rkm (jj preferred, else git)
+  rkm init --in-tree [--name N]   start a bundle in rkm/, committed with the code
+  rkm migrate [--workspace PATH]  move an in-tree bundle to _rkm
   rkm path                        print the bundle's absolute directory
   rkm workspace add [--workspace PATH]  reattach existing knowledge history
   rkm workspace remove            remove a clean checkout, retaining history
   rkm config [--workspace-root PATH]  view or save the global knowledge workspace parent
   rkm commit -m MESSAGE | --summary TEXT [--kind KIND]
                                   commit knowledge using repository policy
-  rkm new todo|bug|spec|decision|roadmap|process [<slug>] --title T [--description D]
-          [--from ORIGIN]          the slug defaults to one made from the title
+  rkm new todo|bug|request|spec|decision|roadmap|process [<slug>] --title T
+          [--description D] [--from ORIGIN] [--to LABEL]
+                                   the slug defaults to one made from the title
   rkm adopt <path> <kind> [--description D] [--as ID] [--from ORIGIN]
                                    frontmatter for a file without it; a file
                                    outside rkm/ moves in, its links rewritten
   rkm close <id> [--note N]        state: done, closed stamped
   rkm reopen <id>
+  rkm state <id> <state>           a state between open and done, e.g. asked
   rkm retype <id> <type>           the file stays where it is
   rkm status <id> draft|stable|deprecated
-  rkm set <id> title|description|tags <value>
+  rkm set <id> title|description|tags|to <value>
   rkm touch <id>                   restamp `generated` after rewriting the body
   rkm from <id> <origin>           record another place that asked for it
   rkm verify <id>                  human sign-off; refused for agents
@@ -45,8 +48,9 @@ An <id> is a concept id (`todos/regex-engine-swap`), a path
 (`rkm/todos/regex-engine-swap.md`) or a bare slug when it is unique.
 
 The repo is RKM_ROOT, else the nearest directory at or above the working
-directory with an rkm/ bundle, else the jj or Git root. Branch mode stores
-the bundle in a chosen workspace and remembers its location locally.
+directory with an rkm/ bundle, else the jj or Git root. Branch mode, the
+default, checks the bundle out under the global workspace root, else beside
+the repository (`../<repo>-rkm`), and remembers its location locally.
 
 rkm/config.toml, optional, holds what differs between repositories:
 
@@ -57,7 +61,8 @@ rkm/config.toml, optional, holds what differs between repositories:
   text_extensions  further extensions whose links `mv` rewrites
   [types.<Name>]   add a type or change a default one: dir (where `rkm new`
                    puts it; none means adopt only), section (in the index),
-                   tracked (carries `state`), template (new body), about
+                   tracked (carries `state`), states (its states, from open
+                   to done; default open, done), template (new body), about
                    (its row in `rkm conventions`)
 
 Writes are stamped with an actor: RKM_ACTOR, else `human:$USER`. An agent
@@ -185,12 +190,17 @@ DEFAULT_TYPES = {
             "about": "Behaviour that is wrong, with a repro."},
     "Todo": {"dir": "todos", "section": "Open todos", "tracked": True,
              "about": "Planned work, one item per file."},
+    "Request": {"dir": "requests", "section": "Open requests", "tracked": True,
+                "states": ["open", "asked", "done"],
+                "about": "What we want from another repo or team; `to` names who. "
+                         "`asked` once it has been put to them."},
     "Process": {"dir": "process", "section": "Process", "about": "How to make a kind of change."},
     "Guide": {"section": "Guides"},
 }
 DEFAULT_TEMPLATES = {
     "Bug": "## Repro\n\n## Expected\n\n## Actual\n",
     "Todo": "## Why\n\n## What\n",
+    "Request": "**Hit in:** where we ran into it.\n\n**Ask:** what we want changed.\n",
     # A decision says why something is the way it is, and what reopening it
     # would cost. Keep it short and link to the spec rather than restate it.
     "Decision": "**Decision.** One or two sentences.\n\n**Why.** The reasons, with links to the "
@@ -200,7 +210,7 @@ DEFAULT_TEMPLATES = {
 
 
 CONFIG_KEYS = {"name", "intro", "requires", "skip", "text_extensions", "types", "commits", "push_policy"}
-TYPE_KEYS = {"dir", "section", "tracked", "template", "about"}
+TYPE_KEYS = {"dir", "section", "tracked", "states", "template", "about"}
 COMMIT_KEYS = {"template", "guidance", "pattern"}
 
 
@@ -241,6 +251,13 @@ def load_config():
     if unknown:
         sys.exit(f"rkm: rkm/config.toml: unknown key(s) {', '.join(sorted(unknown))}")
     try:
+        for t, v in config.get("types", {}).items():
+            st = v.get("states")
+            if st is not None and not (isinstance(st, list) and len(st) >= 2 and st[0] == "open"
+                                       and st[-1] == "done" and len(set(st)) == len(st)
+                                       and all(isinstance(x, str) and re.fullmatch(r"[a-z][a-z0-9_-]*", x) for x in st)):
+                raise ValueError(f"types.{t}.states must run from \"open\" to \"done\", "
+                                 "each a distinct lower-case name")
         validate_commit_policy(config.get("commits", {}))
         if "push_policy" in config and (not isinstance(config["push_policy"], str)
                                        or not config["push_policy"].strip()
@@ -267,7 +284,7 @@ def configure_bundle():
         TYPE_DEFS.setdefault(t, {}).update(v)
     TYPES = set(TYPE_DEFS)
     KINDS = {t.lower(): (t, v["dir"]) for t, v in TYPE_DEFS.items() if v.get("dir")}
-    TRACKED = {t for t, v in TYPE_DEFS.items() if v.get("tracked")}
+    TRACKED = {t for t, v in TYPE_DEFS.items() if v.get("tracked") or v.get("states")}
     TEMPLATES = {**DEFAULT_TEMPLATES,
                  **{t: v["template"] for t, v in TYPE_DEFS.items() if "template" in v}}
     SECTIONS = [v.get("section", t) for t, v in TYPE_DEFS.items()] + ["Closed", "Deprecated", "Other"]
@@ -278,12 +295,18 @@ def configure_bundle():
 
 configure_bundle()
 STATES = ("open", "done")
+
+
+def states_of(t):
+    """A tracked type's states. rkm acts only on the ends: `new` sets open,
+    `close` done; any between are labels `rkm state` moves an item through."""
+    return tuple(TYPE_DEFS.get(t, {}).get("states", STATES))
 STATUSES = ("draft", "stable", "deprecated")
 KEY_ORDER = ["type", "title", "description", "state", "status", "decided", "tags",
-             "from", "generated", "closed", "verified", "stale_after", "sources"]
+             "to", "from", "generated", "closed", "verified", "stale_after", "sources"]
 QUOTED = {"title", "description"}
 WRITES = {"type", "title", "description", "state", "status", "decided", "tags",
-          "from", "generated", "closed", "verified"}
+          "to", "from", "generated", "closed", "verified"}
 BLOCK_LISTS = {"from", "verified"}
 
 DATE = re.compile(r"^\d{4}-\d\d-\d\d$")
@@ -329,10 +352,7 @@ def global_config():
 
 
 def preferred_workspace():
-    root = global_config().get("workspace_root")
-    if not root:
-        return ""
-    # Stable across code workspaces, distinct for same-named repos and clones.
+    """Under the global workspace root if set, else beside the repository."""
     if os.path.basename(REPO_META) == ".git":
         owner = os.path.dirname(REPO_META)
     elif os.sep + ".jj" + os.sep in REPO_META:
@@ -340,6 +360,11 @@ def preferred_workspace():
     else:
         owner = REPO_META
     name = re.sub(r"[^\w.-]", "-", os.path.basename(owner).removesuffix(".git")).strip(".-") or "repo"
+    root = global_config().get("workspace_root")
+    if not root:
+        # Code workspaces share the checkout beside the repository that owns them.
+        return os.path.join(os.path.dirname(owner), f"{name}-rkm")
+    # Stable across code workspaces, distinct for same-named repos and clones.
     suffix = hashlib.sha256(os.fsencode(REPO_META)).hexdigest()[:12]
     return os.path.join(os.path.realpath(os.path.expanduser(root)), f"{name}-{suffix}")
 
@@ -374,7 +399,7 @@ def cmd_config(a):
     if "workspace_root" in config:
         print("workspace_root = " + json.dumps(config["workspace_root"], ensure_ascii=False))
     else:
-        print("workspace_root is unset; supply --workspace when enabling branch storage")
+        print("workspace_root is unset; knowledge is checked out beside each repository (../<repo>-rkm)")
 
 
 @contextlib.contextmanager
@@ -488,7 +513,7 @@ def cmd_workspace(a):
             raise Fail("no branch storage is configured")
         branch = declared_branch() or "_rkm"
         if not knowledge_revision(BACKEND, branch):
-            raise Fail(f"knowledge branch {branch} is unavailable; fetch it or use `rkm init --branch`")
+            raise Fail(f"knowledge branch {branch} is unavailable; fetch it or use `rkm init`")
         enable_branch(argparse.Namespace(branch=branch, workspace=a.workspace, name=None))
         return
     if a.action == "add":
@@ -664,9 +689,6 @@ def enable_branch(a, migrate=False):
         print(f"Managed RKM section in {os.path.join(REPO, 'AGENTS.md')}: {state}.")
         return
     chosen_workspace = a.workspace or preferred_workspace()
-    if not chosen_workspace:
-        raise Fail("supply the knowledge workspace location with --workspace PATH, or save a global "
-                   "parent with `rkm config --workspace-root PATH`")
     actor()  # authorize before workspace creation or copying
     agents_content()  # reject malformed managed sections before migrating data
     workspace = os.path.realpath(os.path.expanduser(chosen_workspace))
@@ -674,9 +696,10 @@ def enable_branch(a, migrate=False):
             os.path.commonpath([workspace, REPO_META]) == REPO_META):
         raise Fail("the knowledge workspace must be outside the code checkout and repository metadata")
     if os.path.lexists(workspace):
-        raise Fail(f"workspace location already exists: {workspace}; choose a new directory")
+        raise Fail(f"workspace location already exists: {workspace}; choose a new directory "
+                   "with --workspace PATH")
     if has_bundle(REPO) != migrate:
-        raise Fail("use `rkm migrate --workspace PATH` for an existing in-tree bundle" if not migrate
+        raise Fail("use `rkm migrate` for an existing in-tree bundle" if not migrate
                    else "no in-tree rkm/ bundle to migrate")
     source = os.path.join(REPO, "rkm")
     revision = knowledge_revision(BACKEND, branch)
@@ -827,7 +850,7 @@ def encode(key, v):
     if isinstance(v, list):
         return "[" + ", ".join(encode(key, x) for x in v) + "]"
     if key not in QUOTED and (ACTOR.match(v) or TIMESTAMP.match(v) or BARE.match(v)
-                              or key == "from" and ORIGIN.match(v)):
+                              or key in ("to", "from") and ORIGIN.match(v)):
         return v
     return json.dumps(v, ensure_ascii=False)
 
@@ -986,6 +1009,13 @@ def origins(doc):
     """`from` as a list; a hand-written single value counts as one entry."""
     v = doc.get("from")
     return [] if v is None else v if isinstance(v, list) else [v]
+
+
+def target(label):
+    """`to`: who a request is put to, as a label, never a link; links go in the body."""
+    if label is not None and (not ORIGIN.match(label) or "://" in label):
+        raise Fail(f"to {label!r} is not a prefix:name label, e.g. repo:org/name or team:platform")
+    return label
 
 
 def origin(ref):
@@ -1195,6 +1225,7 @@ def cmd_new(a):
     generated = stamp()  # refuses a bad actor before anything is written
     description = describe(a.description)
     source = origin(a.from_)
+    to = target(a.to)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     body = f"# {a.title}\n\n" + TEMPLATES.get(t, "")
     with open(path, "w", encoding="utf-8") as f:
@@ -1208,6 +1239,7 @@ def cmd_new(a):
         doc.set("status", "draft")
     if t == "Decision":
         doc.set("decided", now()[:10])
+    doc.set("to", to)
     if source:
         doc.set("from", [source])
     doc.set("generated", generated)
@@ -1258,6 +1290,8 @@ def cmd_adopt(a):
     source = origin(a.from_)
     if t == "Decision" and not (a.decided and DATE.match(a.decided)):
         raise Fail("a Decision needs --decided YYYY-MM-DD")
+    if t in TRACKED and a.state not in states_of(t):
+        raise Fail(f"a {t}'s state is one of {', '.join(states_of(t))}")
     if outside:
         move_file(src, bundle_rel(path))
         text = open(path, encoding="utf-8").read()
@@ -1310,6 +1344,24 @@ def cmd_reopen(a):
     write_index()
 
 
+def cmd_state(a):
+    doc = resolve(a.id)
+    tracked(doc)
+    allowed = states_of(doc.get("type"))
+    if a.state == "done":
+        raise Fail("use rkm close, which stamps `closed`")
+    if a.state not in allowed:
+        raise Fail(f"a {doc.get('type')}'s state is one of {', '.join(allowed)}")
+    if doc.get("state") == "done":
+        raise Fail(f"{doc.id} is done; rkm reopen it first")
+    if doc.get("state") == a.state:
+        raise Fail(f"{doc.id} is already {a.state}")
+    doc.set("state", a.state)
+    doc.save()
+    log("Update", doc, f"state {a.state}" + (f": {a.note}" if a.note else ""))
+    write_index()
+
+
 def cmd_retype(a):
     doc = resolve(a.id)
     new = KINDS[a.kind][0] if a.kind in KINDS else a.kind
@@ -1317,7 +1369,7 @@ def cmd_retype(a):
         raise Fail(f"type must be one of {', '.join(sorted(TYPES))}")
     old = doc.get("type")
     doc.set("type", new)
-    if new in TRACKED and old not in TRACKED:
+    if new in TRACKED and (old not in TRACKED or doc.get("state") not in states_of(new)):
         doc.set("state", "open")
     if new not in TRACKED:
         doc.set("state", None)
@@ -1340,6 +1392,8 @@ def cmd_set(a):
     if a.field == "tags":
         value = [t.strip() for t in a.value.split(",") if t.strip()]
         doc.set("tags", value or None)
+    elif a.field == "to":
+        doc.set("to", target(a.value.strip()) or None)
     else:
         if not a.value.strip():
             raise Fail(f"{a.field} cannot be empty")
@@ -1526,8 +1580,8 @@ def problems():
             if not isinstance(v, str) or not v.strip() or v == "TODO":
                 bad(f"no `{k}`")
         if t in TRACKED:
-            if d.get("state") not in STATES:
-                bad(f"state must be {' or '.join(STATES)}")
+            if d.get("state") not in states_of(t):
+                bad(f"state must be one of {', '.join(states_of(t))}")
         elif "state" in d.values:
             bad(f"a {t} has no `state`")
         if t == "Decision":
@@ -1545,6 +1599,10 @@ def problems():
                 if not isinstance(v, dict) or not ACTOR.match(str(v.get("by", ""))) \
                         or not TIMESTAMP.match(str(v.get("at", ""))):
                     bad(f"`{k}` must be {{ by: <actor>, at: <ISO 8601 with offset> }}")
+        if "to" in d.values:
+            v = d.get("to")
+            if not isinstance(v, str) or not ORIGIN.match(v) or "://" in v:
+                bad("`to` is one prefix:name label, e.g. repo:org/name; links go in the body")
         if "from" in d.values:
             f = origins(d)
             if not f or not all(isinstance(x, str) and ORIGIN.match(x) for x in f):
@@ -1633,6 +1691,8 @@ rkm retype regex-engine-swap bug  # the file stays where it is
 rkm touch <id>                    # after rewriting a body: stamps `generated`
 rkm new todo --title "…" --description "…" --from https://…  # asked for elsewhere
 rkm from <id> repo:org/other      # another place asked for the same thing
+rkm new request --title "…" --description "…" --to repo:org/name  # an ask of another repo
+rkm state <id> asked              # once the request has been put to them
 rkm set <id> description "…"      # title, description or tags
 rkm status <id> draft             # draft | stable | deprecated
 rkm mv <id> <new-id>              # renames and rewrites every link to it
@@ -1654,6 +1714,10 @@ rkm check                         # conformance: frontmatter, links, index
   repo: a link to the thread, issue or chat if there is one, else a label
   such as `app:slack` or `repo:org/name`. It lists the first place, then each
   later one added with `rkm from`; `touch` keeps it.
+- **A request is what we want from someone else**; `to` names who, as a
+  label. Its state is `open` until it has been put to them, then `asked`,
+  then `done` on `rkm close`, with a note saying whether it was delivered or
+  declined. Links to their issue, todo or PR go in the body.
 - **An agent always writes a `description`.** It is the index line the next
   reader chooses by. A person may leave it out; rkm refuses that from an agent.
 - Link between files with relative links, not `/`-rooted ones, so they work on
@@ -1678,10 +1742,10 @@ def conventions_text(branch_mode=None):
             "The saved location is local to this clone and shared by its code\n"
             "workspaces. `rkm/` paths below are logical identifiers; `rkm` resolves them.\n"
             "If the knowledge checkout is absent, ordinary RKM commands recreate it from\n"
-            "the existing branch at the saved location. In a new clone, the declaration\n"
-            "in AGENTS.md lets RKM set up the checkout using your global workspace parent.\n"
-            "For a new clone, fetch the knowledge branch and run\n"
-            f"`rkm init --branch {BRANCH} --workspace <chosen-directory>`.\n"
+            "the existing branch at the saved location. In a new clone, fetch the knowledge\n"
+            "branch; the declaration in AGENTS.md lets RKM set up the checkout under your\n"
+            "global workspace parent, or beside the repository when none is set. To choose\n"
+            f"another location, run `rkm init --branch {BRANCH} --workspace <chosen-directory>`.\n"
             "Keep essential checkout-specific instructions in AGENTS.md.\n")
         text = text.replace(
             "- Link between files with relative links, not `/`-rooted ones, so they work on\n"
@@ -1728,9 +1792,10 @@ def conventions_text(branch_mode=None):
                  "serializes RKM writes; it does not isolate sessions' changes. Knowledge\n"
                  "commits are separate from code commits and are never merged into them.\n\n"
                  "Missing configured checkouts are recreated from existing history. New clones\n"
-                 "also need the fetched knowledge branch and a global workspace parent or an\n"
-                 "explicit location. Missing history or an occupied location requires action;\n"
-                 "RKM does not create an empty replacement or overwrite another checkout.\n")
+                 "also need the fetched knowledge branch, checked out under the global workspace\n"
+                 "parent or beside the repository. Missing history or an occupied location\n"
+                 "requires action; RKM does not create an empty replacement or overwrite\n"
+                 "another checkout.\n")
     text += "\nPush policy: " + knowledge_push_policy() + "\n"
     text += "This is repository guidance; RKM does not push automatically or enforce external pushes.\n"
     return text
@@ -1785,8 +1850,8 @@ def agents_bootstrap():
              "Push policy: " + knowledge_push_policy() + "\n")
     if BRANCH:
         text += ("Missing configured checkouts are recreated from existing history. A new clone\n"
-                 "needs the fetched knowledge branch and a global workspace parent or explicit\n"
-                 "setup location; unavailable history or an occupied location requires action.\n")
+                 "needs the fetched knowledge branch; unavailable history or an occupied location\n"
+                 "requires action.\n")
     text += "Keep repository-specific rules outside this managed section.\n"
     return text
 
@@ -1877,13 +1942,17 @@ def initialize_bundle(a):
 
 
 def cmd_init(a):
-    if a.branch is not None:
+    if not a.in_tree:
+        if not BACKEND:
+            raise Fail("branch storage needs a jj or Git repository; "
+                       "`rkm init --in-tree` keeps knowledge in rkm/ instead")
+        # Keep a configured branch; a new clone attaches the one AGENTS.md declares.
+        a.branch = a.branch or BRANCH or declared_branch() or None
         enable_branch(a)
         return
-    if a.workspace:
-        raise Fail("--workspace is for branch storage; also supply --branch")
-    if a.message:
-        raise Fail("--message is for the initial branch commit; also supply --branch")
+    for flag, value in (("--branch", a.branch), ("--workspace", a.workspace), ("--message", a.message)):
+        if value is not None:
+            raise Fail(f"{flag} is for branch storage; drop --in-tree")
     if BRANCH or has_bundle(REPO):
         raise Fail(f"{REPO} already has an rkm/ bundle")
     initialize_bundle(a)
@@ -1932,13 +2001,14 @@ def main(argv=None):
     p.add_argument("--draft", action="store_true")
     p.add_argument("--from", dest="from_", metavar="ORIGIN",
                    help="where it was asked for: a link, or a label like app:slack")
+    p.add_argument("--to", metavar="LABEL", help="for a request: who it is put to, e.g. repo:org/name")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("adopt")
     p.add_argument("path")
     p.add_argument("kind")
     p.add_argument("--title")
     p.add_argument("--description", help="required from an agent")
-    p.add_argument("--state", choices=STATES, default="open")
+    p.add_argument("--state", default="open")
     p.add_argument("--decided", help="for a Decision: YYYY-MM-DD")
     p.add_argument("--as", dest="as_", metavar="ID", help="where a file from outside rkm/ goes")
     p.add_argument("--status", choices=("draft", "deprecated"))
@@ -1950,6 +2020,11 @@ def main(argv=None):
         p.add_argument("id")
         p.add_argument("--note")
         p.set_defaults(fn=fn)
+    p = sub.add_parser("state", help="move an item to a state between open and done")
+    p.add_argument("id")
+    p.add_argument("state")
+    p.add_argument("--note")
+    p.set_defaults(fn=cmd_state)
     p = sub.add_parser("from", help="record another place that asked for an item")
     p.add_argument("id")
     p.add_argument("origin", help="a link, or a label like app:slack or repo:org/name")
@@ -1964,7 +2039,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_status)
     p = sub.add_parser("set")
     p.add_argument("id")
-    p.add_argument("field", choices=("title", "description", "tags"))
+    p.add_argument("field", choices=("title", "description", "tags", "to"))
     p.add_argument("value")
     p.set_defaults(fn=cmd_set)
     p = sub.add_parser("verify")
@@ -1980,7 +2055,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_rm)
     p = sub.add_parser("ls")
     p.add_argument("--type")
-    p.add_argument("--state", choices=STATES)
+    p.add_argument("--state")
     p.add_argument("--status", choices=STATUSES)
     p.add_argument("-a", "--all", action="store_true",
                    help="include closed and deprecated documents")
@@ -1994,13 +2069,16 @@ def main(argv=None):
     p.set_defaults(fn=cmd_agents)
     p = sub.add_parser("init")
     p.add_argument("--name", help="project name for the index intro (default: the directory name)")
-    p.add_argument("--branch", nargs="?", const="_rkm", help="use separate history (default: _rkm)")
-    p.add_argument("--workspace", help="knowledge workspace location (overrides the global RKM parent)")
+    p.add_argument("--branch", nargs="?", const="_rkm", help="knowledge bookmark/branch (default: _rkm)")
+    p.add_argument("--workspace", help="knowledge workspace location (default: under the global RKM "
+                   "parent, else ../<repo>-rkm)")
     p.add_argument("-m", "--message", help="complete message for the initial knowledge commit")
+    p.add_argument("--in-tree", action="store_true", help="keep knowledge in rkm/ in this checkout instead")
     p.set_defaults(fn=cmd_init)
     p = sub.add_parser("migrate")
     p.add_argument("--branch", default="_rkm", help="knowledge bookmark/branch (default: _rkm)")
-    p.add_argument("--workspace", help="knowledge workspace location (overrides the global RKM parent)")
+    p.add_argument("--workspace", help="knowledge workspace location (default: under the global RKM "
+                   "parent, else ../<repo>-rkm)")
     p.add_argument("-m", "--message", help="complete message for the migration commit")
     p.set_defaults(fn=cmd_migrate)
     sub.add_parser("path").set_defaults(fn=cmd_path)
@@ -2012,13 +2090,14 @@ def main(argv=None):
     p.set_defaults(fn=cmd_commit)
     p = sub.add_parser("config", help="view or save global RKM preferences")
     group = p.add_mutually_exclusive_group()
-    group.add_argument("--workspace-root", help="global parent directory for RKM knowledge workspaces")
+    group.add_argument("--workspace-root", help="global parent directory for RKM knowledge workspaces "
+                       "(default: beside each repository)")
     group.add_argument("--unset-workspace-root", action="store_true", help="clear the global location preference")
     p.set_defaults(fn=cmd_config)
     p = sub.add_parser("workspace", help="remove or reattach the knowledge workspace")
     workspace_sub = p.add_subparsers(dest="action", required=True)
     p = workspace_sub.add_parser("add")
-    p.add_argument("--workspace", help="override the saved or global knowledge location")
+    p.add_argument("--workspace", help="override the saved or default knowledge location")
     p.set_defaults(fn=cmd_workspace)
     workspace_sub.add_parser("remove").set_defaults(fn=cmd_workspace)
     a = ap.parse_args(argv)
@@ -2027,7 +2106,7 @@ def main(argv=None):
                                             and a.fn not in (cmd_init, cmd_migrate, cmd_config, cmd_workspace)) else ""
         lock = storage_lock() if a.fn is not cmd_config and REPO_META and (BRANCH or declaration
                                                or a.fn in (cmd_migrate, cmd_workspace) or
-                                               (a.fn is cmd_init and a.branch is not None)) else contextlib.nullcontext()
+                                               (a.fn is cmd_init and not a.in_tree)) else contextlib.nullcontext()
         with lock:
             # Another process may have enabled branch mode while we waited.
             if a.fn is not cmd_config and STORAGE_FILE and not BRANCH and os.path.exists(STORAGE_FILE):

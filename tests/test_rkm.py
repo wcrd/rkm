@@ -228,6 +228,52 @@ class RkmTest(unittest.TestCase):
         self.assertIn("from:\n  - app:slack\n", self.repo.read("rkm/todos/ask.md"))
         self.assertIn("from notes/Ask.md; via app:slack", self.repo.read("rkm/log.md"))
 
+    def test_request_is_put_to_someone_and_asked(self):
+        self.repo.run("new", "request", "--title", "Comma links", "--description", "d",
+                      "--to", "repo:org/okit")
+        text = self.repo.read("rkm/requests/comma-links.md")
+        self.assertIn("state: open\nto: repo:org/okit\ngenerated: ", text)
+        self.assertIn("**Hit in:**", text)
+        self.assertIn("# Open requests", self.repo.read("rkm/index.md"))
+        self.repo.run("state", "comma-links", "asked", "--note", "raised in #okd")
+        self.assertIn("state: asked\n", self.repo.read("rkm/requests/comma-links.md"))
+        self.assertIn("state asked: raised in #okd", self.repo.read("rkm/log.md"))
+        self.assertIn("requests/comma-links", self.repo.run("ls", "--state", "asked"))
+        self.assertIn("all conformant", self.repo.run("check"))
+        self.repo.run("state", "comma-links", "done", ok=False)
+        self.repo.run("close", "comma-links", "--note", "delivered")
+        self.repo.run("state", "comma-links", "asked", ok=False)
+        self.repo.run("reopen", "comma-links")
+        self.assertIn("state: open\n", self.repo.read("rkm/requests/comma-links.md"))
+        self.repo.run("set", "comma-links", "to", "https://github.com/org/okit", ok=False)
+        self.repo.run("set", "comma-links", "to", "team:platform")
+        self.assertIn("to: team:platform\n", self.repo.read("rkm/requests/comma-links.md"))
+        self.repo.run("new", "request", "--title", "X", "--description", "d", "--to", "okit", ok=False)
+
+    def test_asked_belongs_to_requests_only(self):
+        self.new_todo()
+        self.repo.run("state", "a", "asked", ok=False)
+        text = self.repo.read("rkm/todos/a.md")
+        self.repo.write("rkm/todos/a.md", text.replace("state: open", "state: asked"))
+        self.assertIn("state must be one of open, done", self.repo.run("check", ok=False))
+        self.repo.write("rkm/todos/a.md", text)
+        self.repo.run("new", "request", "r", "--title", "R", "--description", "d")
+        self.repo.run("state", "r", "asked")
+        self.repo.run("retype", "r", "todo")
+        self.assertIn("state: open\n", self.repo.read("rkm/requests/r.md"))
+        self.assertIn("all conformant", self.repo.run("check"))
+
+    def test_config_states_run_from_open_to_done(self):
+        self.repo.write("rkm/config.toml", '[types.Incident]\ndir = "incidents"\n'
+                        'states = ["open", "mitigated", "done"]\n')
+        self.repo.run("new", "incident", "i", "--title", "I", "--description", "d")
+        self.assertIn("state: open\n", self.repo.read("rkm/incidents/i.md"))
+        self.repo.run("state", "i", "mitigated")
+        self.repo.run("close", "i")
+        self.assertIn("all conformant", self.repo.run("check"))
+        self.repo.write("rkm/config.toml", '[types.Incident]\nstates = ["new", "done"]\n')
+        self.assertIn('must run from "open" to "done"', self.repo.run("check", ok=False))
+
     def test_adopt_gives_a_bare_file_frontmatter(self):
         self.repo.write("rkm/todos/bare.md", "# Bare todo\n\nBody.\n")
         self.assertIn("give it some with `rkm adopt`", self.repo.run("check", ok=False))
@@ -276,17 +322,17 @@ class RkmTest(unittest.TestCase):
         self.assertIn("all conformant", self.repo.run("check"))
 
     def test_config_adds_types_and_sets_the_intro(self):
-        self.repo.write("rkm/config.toml", 'intro = "Knowledge for X."\n\n[types.Request]\n'
-                        'dir = "requests"\nsection = "Open requests"\ntracked = true\n'
+        self.repo.write("rkm/config.toml", 'intro = "Knowledge for X."\n\n[types.Incident]\n'
+                        'dir = "incidents"\nsection = "Open incidents"\ntracked = true\n'
                         'template = "## Want\\n"\n\n[types.Guide]\ndir = "guides"\n')
-        self.repo.run("new", "request", "r", "--title", "R", "--description", "d")
+        self.repo.run("new", "incident", "r", "--title", "R", "--description", "d")
         self.repo.run("new", "guide", "g", "--title", "G", "--description", "d")
-        text = self.repo.read("rkm/requests/r.md")
+        text = self.repo.read("rkm/incidents/r.md")
         self.assertIn("state: open\n", text)
         self.assertIn("## Want\n", text)
         index = self.repo.read("rkm/index.md")
         self.assertIn("Knowledge for X.\n", index)
-        self.assertLess(index.index("# Guides"), index.index("# Open requests"))
+        self.assertLess(index.index("# Guides"), index.index("# Open incidents"))
         self.repo.run("close", "r")
         self.assertIn("all conformant", self.repo.run("check"))
 
@@ -437,7 +483,7 @@ class InitTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_init_starts_a_bundle(self):
-        out = self.repo.run("init")
+        out = self.repo.run("init", "--in-tree")
         self.assertIn("## Repository knowledge (RKM)", out)
         self.assertIn("rkm conventions", out)
         self.assertIn(self.repo.run("agents"), out)
@@ -447,14 +493,20 @@ class InitTest(unittest.TestCase):
                       self.repo.read("rkm/log.md"))
         self.assertFalse(self.repo.exists("scripts"))
         self.assertIn("0 concepts, all conformant", self.repo.run("check"))
-        self.assertIn("already has an rkm/ bundle", self.repo.run("init", ok=False))
+        self.assertIn("already has an rkm/ bundle", self.repo.run("init", "--in-tree", ok=False))
+
+    def test_default_init_needs_a_repository_and_suggests_in_tree(self):
+        out = self.repo.run("init", ok=False)
+        self.assertIn("jj or Git repository", out)
+        self.assertIn("rkm init --in-tree", out)
+        self.assertIn("drop --in-tree", self.repo.run("init", "--in-tree", "--branch", ok=False))
 
     def test_init_refuses_an_unnamed_agent(self):
-        self.repo.run("init", actor=None, agent=True, ok=False)
+        self.repo.run("init", "--in-tree", actor=None, agent=True, ok=False)
         self.assertFalse(self.repo.exists("rkm"))
 
     def test_agents_print_and_write_for_an_in_tree_bundle(self):
-        self.repo.run("init")
+        self.repo.run("init", "--in-tree")
         out = self.repo.run("agents")
         self.assertIn("<!-- rkm:begin -->", out)
         self.assertIn("rkm conventions", out)
@@ -473,7 +525,7 @@ class InitTest(unittest.TestCase):
         self.assertEqual(content, self.repo.read("AGENTS.md"))
 
     def test_conventions_list_the_bundle_types(self):
-        self.repo.run("init")
+        self.repo.run("init", "--in-tree")
         self.repo.write("rkm/config.toml", '[types.Request]\ndir = "requests"\nabout = "Asks from users."\n')
         out = self.repo.run("conventions")
         self.assertIn("**Change it only through `rkm`.**", out)

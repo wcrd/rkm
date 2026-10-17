@@ -26,7 +26,7 @@ When code finishes a todo or fixes a bug, run `rkm close <id> --note
 "<commit-or-change-id>"` in the same session.
 Push policy: Push only when explicitly authorized.
 Missing configured checkouts are recreated from existing history. A new clone
-needs the fetched knowledge branch and a global workspace parent or explicit
-setup location; unavailable history or an occupied location requires action.
+needs the fetched knowledge branch; unavailable history or an occupied location
+requires action.
 Keep repository-specific rules outside this managed section.
 <!-- rkm:end -->

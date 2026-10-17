@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Request is a default type (`rkm/requests/`, "Open requests"): what this repo
+  wants from another repo or team. `new --to repo:org/name` names who, `set
+  <id> to` changes it, and its states are `open`, `asked`, `done`. A bundle
+  that already defines Request keeps its settings, but its "Open requests"
+  section moves after "Open todos": run `rkm index` once after upgrading, or
+  `check` reports the index out of date.
+- A type may list its own `states` in config, from `open` to `done`.
+  `rkm state <id> <state>` moves an item through the states between; `check`
+  and `adopt --state` accept the type's states.
+
+- **Branch storage is the default.** Plain `rkm init` creates the orphan
+  `_rkm` knowledge branch (a jj workspace, else a Git worktree) and writes
+  the AGENTS.md section; `--branch NAME` still picks another name. In a new
+  clone it attaches the branch AGENTS.md declares. The old in-tree `rkm/`
+  folder is opt-in with `rkm init --in-tree`; outside a jj or Git repository
+  plain `init` refuses and suggests it. `--branch` with no name is still
+  accepted.
+- With no global workspace root and no `--workspace`, `init`, `migrate`,
+  `workspace add` and new-clone setup check knowledge out beside the
+  repository, in `../<repo>-rkm`. The global root stays optional and
+  recommended; `rkm config` no longer says `--workspace` is needed without
+  it. The agent bootstrap and `rkm conventions` drop that requirement too;
+  refresh AGENTS.md blocks with `rkm agents --write`.
 - Items record where they were asked for in an optional `from` list: links or
   `prefix:name` labels such as `app:slack` or `repo:org/name`. `new` and
   `adopt` take `--from` for the first; `rkm from <id> <origin>` adds each later

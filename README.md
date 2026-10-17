@@ -1,8 +1,8 @@
 # rkm
 
 Repository knowledge management: the specs, decisions, roadmaps, todos, bugs
-and process notes that contributors and agents work from, kept in a
-repository's `rkm/` directory as an
+and process notes that contributors and agents work from, kept on a
+repository's own `_rkm` branch, out of the code tree, as an `rkm/`
 [Open Knowledge Format v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 bundle, and the `rkm` tool that owns its structure.
 
@@ -47,15 +47,31 @@ newer rkm added.
 
 ## Starting a bundle
 
-At the root of a repository:
+At the root of a jj or Git repository:
 
 ```bash
+rkm config --workspace-root ~/rkm   # optional, once per machine
 rkm init
 ```
 
-`init` creates `rkm/` (`index.md`, `log.md`, `config.toml` with `name` and
-`requires`) and prints a short bootstrap section for `AGENTS.md`.
-Use `rkm agents --write` to add or refresh its managed section; `rkm agents`
+`init` creates an orphan `_rkm` knowledge branch (a jj workspace and
+bookmark, else a Git worktree) and starts the bundle on it: `rkm/index.md`,
+`log.md` and `config.toml` with `name` and `requires`. The checkout goes under
+the global workspace root when one is saved, else beside the repository in
+`../<repo>-rkm`; `rkm path` prints where. `init` also writes a short bootstrap
+section to `AGENTS.md` for you to review and commit with the code.
+[Separate knowledge history](#separate-knowledge-history) has the details.
+
+To keep knowledge in the code tree instead, committed with the code:
+
+```bash
+rkm init --in-tree
+```
+
+This creates `rkm/` in the checkout and prints the bootstrap section without
+writing it. `rkm migrate` moves such a bundle to the knowledge branch later.
+
+Use `rkm agents --write` to add or refresh the managed section; `rkm agents`
 prints the marked block without editing the file. `rkm conventions` prints
 the full RKM rules and command examples. Bring existing notes in with
 `rkm adopt <path> <kind>`: a file outside `rkm/` moves in, and links to it
@@ -67,9 +83,15 @@ another repository, record it with `--from` on `new` or `adopt`: a link, or a
 asks for the same thing is added with `rkm from <id> <origin>`, so `from`
 lists every requester in order and the log dates each one.
 
-## Optional separate knowledge history
+The other direction is a Request: what this repo wants from another repo or
+team. `rkm new request --title "…" --to repo:org/name` files one, `rkm state
+<id> asked` marks it once it has been put to them, and `rkm close` ends it
+with a note saying whether it was delivered or declined.
 
-Save a global parent directory for RKM knowledge workspaces once:
+## Separate knowledge history
+
+Optionally, and recommended, save a global parent directory for RKM knowledge
+workspaces once, so every project's knowledge sits side by side in one folder:
 
 ```bash
 rkm config --workspace-root /your/chosen/rkm-workspaces
@@ -85,18 +107,16 @@ share its saved knowledge location. Changing or clearing the global setting
 does not move any existing workspace. Clear it with
 `rkm config --unset-workspace-root`.
 
-The default remains an in-tree `rkm/` bundle. To keep knowledge out of the
-code tree and its commit ancestry, opt into a separate `_rkm` history:
+By default knowledge lives on a separate `_rkm` history, out of the code
+tree and its commit ancestry:
 
 ```bash
-# Use the saved global parent.
-rkm init --branch
-rkm migrate                      # for an existing in-tree bundle
+rkm init                         # under the global parent, else ../widgets-rkm
+rkm init --workspace ../widgets-knowledge   # a location of your choosing
+rkm init --branch notes          # another bookmark/branch name
 
-# Or override the global parent for this repository.
-rkm init --branch --workspace ../widgets-knowledge
-
-# Or move an existing in-tree bundle, including uncommitted notes.
+# Move an existing in-tree bundle, including uncommitted notes.
+rkm migrate
 rkm migrate --workspace ../widgets-knowledge
 ```
 
@@ -105,8 +125,10 @@ an `_rkm` bookmark. Otherwise it creates a Git worktree on an orphan `_rkm`
 branch. The workspace contains only the `rkm/` bundle. Use `--branch NAME`
 to choose another bookmark/branch name. The workspace must be a new directory
 outside the code checkout and repository metadata.
-Without a global parent, `--workspace PATH` is required. Saving a global parent
-does not automatically enable branch storage or migrate any repository.
+Without a global parent or `--workspace PATH`, the checkout goes in a sibling
+of the main checkout that owns the repository metadata, named `<repo>-rkm`.
+Saving a global parent does not migrate any repository or move an existing
+checkout.
 
 The chosen absolute location, backend and branch are saved in
 `rkm-storage.json` in the shared repository metadata (the Git directory,
@@ -150,9 +172,9 @@ lifecycle commands separately from VCS status and gives the detailed workflow.
 Existing project instructions are preserved. An untouched section previously
 pasted from `rkm conventions` is replaced; customized legacy instructions
 are retained, with the new section explaining how their RKM references resolve.
-Running `rkm agents --write` or `rkm init --branch` again refreshes the managed section without
+Running `rkm agents --write` or `rkm init` again refreshes the managed section without
 duplicating it. Malformed or duplicate markers are refused before migration.
-The default in-tree `rkm init` prints the same bootstrap for manual setup;
+`rkm init --in-tree` prints the same bootstrap for manual setup;
 `rkm agents --write` can install it without changing the storage mode.
 
 Older code branches retaining `rkm/` must reconcile and remove that copy;
@@ -190,11 +212,11 @@ from the existing knowledge branch. A checkout switched to code history or
 an occupied location is refused rather than overwritten.
 
 For a new clone, fetch the knowledge branch/bookmark using your usual VCS.
-The managed AGENTS.md block declares that branch; with a global workspace
-parent configured, the first ordinary RKM operation attaches its workspace
-automatically. Otherwise use `rkm workspace add --workspace <chosen-directory>`
-or `rkm init --branch --workspace <chosen-directory>`. Each clone chooses its
-own location. If the knowledge branch is unavailable, rkm asks you to fetch
+The managed AGENTS.md block declares that branch; the first ordinary RKM
+operation, or `rkm init`, attaches its workspace automatically, under the
+global workspace parent or beside the clone. To choose another location, use
+`rkm workspace add --workspace <chosen-directory>` or
+`rkm init --workspace <chosen-directory>`. Each clone has its own location. If the knowledge branch is unavailable, rkm asks you to fetch
 it; it never creates an empty replacement for missing knowledge history.
 
 ## Configuration
@@ -211,16 +233,19 @@ requires = "0.1"                 # the oldest rkm that reads this bundle
 skip = ["vendor", "tests/goldens"]   # trees `mv` and `check` don't read
 text_extensions = [".okd"]       # further files whose links `mv` rewrites
 
-[types.Request]                  # a new type, or a change to a default one
-dir = "requests"                 # where `rkm new request` puts it; none: adopt only
-section = "Open requests"        # its index section
+[types.Incident]                 # a new type, or a change to a default one
+dir = "incidents"                # where `rkm new incident` puts it; none: adopt only
+section = "Open incidents"       # its index section
 tracked = true                   # carries state: open|done
-template = "## Want\n"           # body of a new one
-about = "Asks from users."       # its row in `rkm conventions`
+states = ["open", "mitigated", "done"]  # optional; from open to done
+template = "## Impact\n"         # body of a new one
+about = "Outages and their follow-up."  # its row in `rkm conventions`
 ```
 
-The default types are Spec, Decision, Roadmap, Bug, Todo, Process and Guide;
-`DEFAULT_TYPES` in `rkm.py` lists their settings.
+The default types are Spec, Decision, Roadmap, Bug, Todo, Request, Process
+and Guide; `DEFAULT_TYPES` in `rkm.py` lists their settings. rkm acts only on
+the ends of a type's `states`: `new` sets `open` and `close` sets `done`.
+`rkm state <id> <state>` moves an item through any states between.
 
 ## Knowledge commit messages
 
@@ -258,7 +283,7 @@ Repository policy takes precedence over the default recommendation.
 
 Generated and explicit messages are validated before RKM commits them.
 Initialization and migration use the same policy with kind `rkm`; their first
-commit can be overridden with `init --branch -m MESSAGE` or
+commit can be overridden with `init -m MESSAGE` or
 `migrate -m MESSAGE`. An existing knowledge branch is attached without a new
 initialization commit. Direct jj/Git commits bypass RKM validation. Remote
 rules still apply and may use different regex syntax or additional constraints.

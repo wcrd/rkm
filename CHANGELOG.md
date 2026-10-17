@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The agent bootstrap and `rkm conventions` say plainly to commit knowledge
+  changes with `rkm commit` before finishing, in the session that made them.
+  In-tree bootstraps say to commit `rkm/` with the code it describes. Refresh
+  existing AGENTS.md blocks with `rkm agents --write`.
 - `ls` hides closed (`state: done`) and deprecated documents by default, in
   the table and in `--json`. `--all` (`-a`) shows everything, and
   `--state done` or `--status deprecated` still list those documents. On a

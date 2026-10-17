@@ -426,6 +426,7 @@ class InitTest(unittest.TestCase):
         self.assertIn("this checkout's `rkm/` bundle", out)
         self.assertNotIn("**not in this checkout**", out)
         self.assertNotIn("everything pending in the bundle", out)
+        self.assertIn("Commit `rkm/` changes with your usual VCS", out)
         self.assertFalse(self.repo.exists("AGENTS.md"))
         self.repo.write("AGENTS.md", "# Project rules\nUse nextest.\n")
         self.repo.run("agents", "--write")

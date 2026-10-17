@@ -1638,7 +1638,8 @@ def conventions_text(branch_mode=None):
             "  and `rkm mv` resolve them, but ordinary Markdown viewers may not.\n"
             "- Edit bodies at the location printed by `rkm path`. RKM commands serialize their\n"
             "  writes; coordinate simultaneous manual edits to the same file.\n"
-            "- Run `rkm commit -m MESSAGE` to record knowledge changes. Push the knowledge\n"
+            "- **Commit knowledge changes before you finish** with `rkm commit --summary TEXT`\n"
+            "  (or `-m MESSAGE`); they are not recorded until you do. Push the knowledge\n"
             "  bookmark/branch separately; it is never merged into the code history.")
     policy = CONFIG.get("commits", {})
     text += ("\n## Knowledge commit messages\n\n"
@@ -1666,7 +1667,9 @@ def conventions_text(branch_mode=None):
              "When a code change finishes a todo or fixes a bug, close the knowledge item\n"
              'in the same session with `rkm close <id> --note "<commit-or-change-id>"`.\n')
     if branch_mode:
-        text += ("\n`rkm commit` records everything pending in the bundle, including other sessions'\n"
+        text += ("\nCommit your knowledge changes in the session that made them, before you\n"
+                 "finish; don't leave them pending for someone else to find.\n"
+                 "`rkm commit` records everything pending in the bundle, including other sessions'\n"
                  "edits. Review the whole bundle first; coordinate unrelated pending edits\n"
                  "with their authors rather than committing them accidentally. Command locking\n"
                  "serializes RKM writes; it does not isolate sessions' changes. Knowledge\n"
@@ -1717,9 +1720,13 @@ def agents_bootstrap():
              "Read `$B/index.md` and relevant specs, decisions and process notes before working.\n"
              "Create, rename, retype, close and delete through `rkm`; edit bodies by hand.\n")
     if BRANCH:
-        text += ("`rkm commit` commits everything pending in the bundle, including other sessions'\n"
-                 "edits. Review its status first. Knowledge commits stay separate from code\n"
-                 "commits and are never merged into them.\n")
+        text += ("**Commit knowledge changes before you finish** with `rkm commit --summary\n"
+                 "TEXT`; they are not recorded until you do. It commits everything pending in\n"
+                 "the bundle, including other sessions' edits, so review its status first.\n"
+                 "Knowledge commits stay separate from code commits and are never merged\n"
+                 "into them.\n")
+    else:
+        text += "Commit `rkm/` changes with your usual VCS, alongside the code they describe.\n"
     text += ('When code finishes a todo or fixes a bug, run `rkm close <id> --note\n'
              '"<commit-or-change-id>"` in the same session.\n'
              "Push policy: " + knowledge_push_policy() + "\n")

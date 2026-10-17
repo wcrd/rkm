@@ -19,8 +19,8 @@ in place. Each repository has its own rkm/config.toml.
   rkm commit -m MESSAGE | --summary TEXT [--kind KIND]
                                   commit knowledge using repository policy
   rkm new todo|bug|spec|decision|roadmap|process [<slug>] --title T [--description D]
-                                   the slug defaults to one made from the title
-  rkm adopt <path> <kind> [--description D] [--as ID]
+          [--from ORIGIN]          the slug defaults to one made from the title
+  rkm adopt <path> <kind> [--description D] [--as ID] [--from ORIGIN]
                                    frontmatter for a file without it; a file
                                    outside rkm/ moves in, its links rewritten
   rkm close <id> [--note N]        state: done, closed stamped
@@ -29,6 +29,7 @@ in place. Each repository has its own rkm/config.toml.
   rkm status <id> draft|stable|deprecated
   rkm set <id> title|description|tags <value>
   rkm touch <id>                   restamp `generated` after rewriting the body
+  rkm from <id> <origin>           record another place that asked for it
   rkm verify <id>                  human sign-off; refused for agents
   rkm mv <id> <new-id>             rename and rewrite every link to it
   rkm rm <id>                      delete; refused while anything links to it
@@ -279,10 +280,11 @@ configure_bundle()
 STATES = ("open", "done")
 STATUSES = ("draft", "stable", "deprecated")
 KEY_ORDER = ["type", "title", "description", "state", "status", "decided", "tags",
-             "generated", "closed", "verified", "stale_after", "sources"]
+             "from", "generated", "closed", "verified", "stale_after", "sources"]
 QUOTED = {"title", "description"}
 WRITES = {"type", "title", "description", "state", "status", "decided", "tags",
-          "generated", "closed", "verified"}
+          "from", "generated", "closed", "verified"}
+BLOCK_LISTS = {"from", "verified"}
 
 DATE = re.compile(r"^\d{4}-\d\d-\d\d$")
 
@@ -292,6 +294,9 @@ SKIP_NAMES = {".git", ".jj", "target", "node_modules"}
 ACTOR = re.compile(r"^(human|process|team):[\w.@-]+$|^[\w.-]+/[\w.-]+$")
 TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$")
 BARE = re.compile(r"^[A-Za-z0-9][\w.+-]*$")
+# Where an item was asked for: a link (https://…) or a label (app:slack,
+# repo:org/name). Either is a lower-case prefix, a colon and no spaces.
+ORIGIN = re.compile(r"^[a-z][a-z0-9+.-]*:\S+$")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
@@ -821,7 +826,8 @@ def encode(key, v):
         return "{ " + ", ".join(f"{k}: {encode(k, x)}" for k, x in v.items()) + " }"
     if isinstance(v, list):
         return "[" + ", ".join(encode(key, x) for x in v) + "]"
-    if key not in QUOTED and (ACTOR.match(v) or TIMESTAMP.match(v) or BARE.match(v)):
+    if key not in QUOTED and (ACTOR.match(v) or TIMESTAMP.match(v) or BARE.match(v)
+                              or key == "from" and ORIGIN.match(v)):
         return v
     return json.dumps(v, ensure_ascii=False)
 
@@ -893,8 +899,8 @@ class Doc:
                 continue
             if k in self.dirty or k not in self.raw:
                 v = self.values[k]
-                if k == "verified" and isinstance(v, list):
-                    out.append("verified:")
+                if k in BLOCK_LISTS and isinstance(v, list):
+                    out.append(f"{k}:")
                     out += [f"  - {encode(k, x)}" for x in v]
                 else:
                     out.append(f"{k}: {encode(k, v)}")
@@ -974,6 +980,18 @@ def actor():
 
 def stamp():
     return {"by": actor(), "at": now()}
+
+
+def origins(doc):
+    """`from` as a list; a hand-written single value counts as one entry."""
+    v = doc.get("from")
+    return [] if v is None else v if isinstance(v, list) else [v]
+
+
+def origin(ref):
+    if ref is not None and not ORIGIN.match(ref):
+        raise Fail(f"from {ref!r} is not a link or a prefix:name label, e.g. app:slack or repo:org/name")
+    return ref
 
 
 def describe(description):
@@ -1176,6 +1194,7 @@ def cmd_new(a):
         raise Fail(f"slug {a.slug} is taken by {os.path.relpath(hits[0], BUNDLE)[:-3]}{hint}")
     generated = stamp()  # refuses a bad actor before anything is written
     description = describe(a.description)
+    source = origin(a.from_)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     body = f"# {a.title}\n\n" + TEMPLATES.get(t, "")
     with open(path, "w", encoding="utf-8") as f:
@@ -1189,9 +1208,11 @@ def cmd_new(a):
         doc.set("status", "draft")
     if t == "Decision":
         doc.set("decided", now()[:10])
+    if source:
+        doc.set("from", [source])
     doc.set("generated", generated)
     doc.save()
-    log("Creation", doc)
+    log("Creation", doc, f"via {source}" if source else None)
     write_index()
     print(path if BRANCH else bundle_rel(path))
 
@@ -1234,6 +1255,7 @@ def cmd_adopt(a):
     if not title:
         raise Fail("no `# ` heading to take the title from; pass --title")
     description = describe(a.description)  # refuses a bad actor before anything is written
+    source = origin(a.from_)
     if t == "Decision" and not (a.decided and DATE.match(a.decided)):
         raise Fail("a Decision needs --decided YYYY-MM-DD")
     if outside:
@@ -1250,8 +1272,12 @@ def cmd_adopt(a):
         doc.set("decided", a.decided)
     if a.status:
         doc.set("status", a.status)
+    if source:
+        doc.set("from", [source])
     doc.save()
-    log("Adoption", doc, f"from {src}" if outside else None)
+    note = "; ".join(n for n in (f"from {src}" if outside else None,
+                                 f"via {source}" if source else None) if n)
+    log("Adoption", doc, note or None)
     write_index()
 
 
@@ -1332,6 +1358,21 @@ def cmd_touch(a):
     doc.set("generated", stamp())
     doc.save()
     log("Update", doc, a.note)
+
+
+def cmd_from(a):
+    """Record one more place that asked for an item. The body is unchanged,
+    so `generated` is not restamped; the log dates the request."""
+    origin(a.origin)
+    actor()  # refuses a bad actor before anything is written
+    doc = resolve(a.id)
+    seen = origins(doc)
+    if a.origin in seen:
+        print(f"{doc.id} already lists {a.origin}")
+        return
+    doc.set("from", seen + [a.origin])
+    doc.save()
+    log("Request", doc, f"via {a.origin}")
 
 
 def cmd_verify(a):
@@ -1504,6 +1545,12 @@ def problems():
                 if not isinstance(v, dict) or not ACTOR.match(str(v.get("by", ""))) \
                         or not TIMESTAMP.match(str(v.get("at", ""))):
                     bad(f"`{k}` must be {{ by: <actor>, at: <ISO 8601 with offset> }}")
+        if "from" in d.values:
+            f = origins(d)
+            if not f or not all(isinstance(x, str) and ORIGIN.match(x) for x in f):
+                bad("`from` entries are links or prefix:name labels, e.g. app:slack")
+            elif len(set(f)) != len(f):
+                bad("`from` lists an origin twice")
         v = d.get("verified")
         if v is not None:
             for x in v if isinstance(v, list) else [v]:
@@ -1584,6 +1631,8 @@ rkm new decision closed-by-default --title "…" --description "…"  # numbered
 rkm close regex-engine-swap --note "landed in feat/regex"
 rkm retype regex-engine-swap bug  # the file stays where it is
 rkm touch <id>                    # after rewriting a body: stamps `generated`
+rkm new todo --title "…" --description "…" --from https://…  # asked for elsewhere
+rkm from <id> repo:org/other      # another place asked for the same thing
 rkm set <id> description "…"      # title, description or tags
 rkm status <id> draft             # draft | stable | deprecated
 rkm mv <id> <new-id>              # renames and rewrites every link to it
@@ -1601,6 +1650,10 @@ rkm check                         # conformance: frontmatter, links, index
   (`draft`, `stable`, `deprecated`); a todo's progress is `state`.
 - **`verify` is a human sign-off.** rkm refuses it from an agent. A file only
   an agent wrote, with no `verified`, is unreviewed; say so when you rely on it.
+- **`from` says where an item was asked for**, when that was outside this
+  repo: a link to the thread, issue or chat if there is one, else a label
+  such as `app:slack` or `repo:org/name`. It lists the first place, then each
+  later one added with `rkm from`; `touch` keeps it.
 - **An agent always writes a `description`.** It is the index line the next
   reader chooses by. A person may leave it out; rkm refuses that from an agent.
 - Link between files with relative links, not `/`-rooted ones, so they work on
@@ -1877,6 +1930,8 @@ def main(argv=None):
     p.add_argument("--title", required=True)
     p.add_argument("--description", help="required from an agent")
     p.add_argument("--draft", action="store_true")
+    p.add_argument("--from", dest="from_", metavar="ORIGIN",
+                   help="where it was asked for: a link, or a label like app:slack")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("adopt")
     p.add_argument("path")
@@ -1887,12 +1942,18 @@ def main(argv=None):
     p.add_argument("--decided", help="for a Decision: YYYY-MM-DD")
     p.add_argument("--as", dest="as_", metavar="ID", help="where a file from outside rkm/ goes")
     p.add_argument("--status", choices=("draft", "deprecated"))
+    p.add_argument("--from", dest="from_", metavar="ORIGIN",
+                   help="where it was asked for: a link, or a label like app:slack")
     p.set_defaults(fn=cmd_adopt)
     for name, fn in (("close", cmd_close), ("reopen", cmd_reopen), ("touch", cmd_touch)):
         p = sub.add_parser(name)
         p.add_argument("id")
         p.add_argument("--note")
         p.set_defaults(fn=fn)
+    p = sub.add_parser("from", help="record another place that asked for an item")
+    p.add_argument("id")
+    p.add_argument("origin", help="a link, or a label like app:slack or repo:org/name")
+    p.set_defaults(fn=cmd_from)
     p = sub.add_parser("retype")
     p.add_argument("id")
     p.add_argument("kind")

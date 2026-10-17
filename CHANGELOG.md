@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Items record where they were asked for in an optional `from` list: links or
+  `prefix:name` labels such as `app:slack` or `repo:org/name`. `new` and
+  `adopt` take `--from` for the first; `rkm from <id> <origin>` adds each later
+  requester without restamping `generated`, and logs it as a **Request**.
+  `check` validates the entries and refuses duplicates.
 - The agent bootstrap and `rkm conventions` say plainly to commit knowledge
   changes with `rkm commit` before finishing, in the session that made them.
   In-tree bootstraps say to commit `rkm/` with the code it describes. Refresh

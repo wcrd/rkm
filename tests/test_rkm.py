@@ -192,6 +192,42 @@ class RkmTest(unittest.TestCase):
         self.assertIn(f"verified:\n  - {{ by: human:tester, at: {NOW} }}\n", self.repo.read("rkm/todos/a.md"))
         self.repo.run("check")
 
+    def test_from_records_each_place_that_asked(self):
+        url = "https://team.slack.com/archives/C01/p17#x"
+        self.repo.run("new", "todo", "a", "--title", "Do A", "--description", "d", "--from", url)
+        text = self.repo.read("rkm/todos/a.md")
+        self.assertIn(f"state: open\nfrom:\n  - {url}\ngenerated: ", text)
+        self.assertIn(f"**Creation**: [Do A](todos/a.md): via {url}", self.repo.read("rkm/log.md"))
+        self.repo.run("from", "a", "repo:org/other", actor="claude/opus-5.5", agent=True)
+        self.assertIn("already lists", self.repo.run("from", "a", url))
+        self.repo.run("touch", "a")
+        text = self.repo.read("rkm/todos/a.md")
+        self.assertIn(f"from:\n  - {url}\n  - repo:org/other\n", text)
+        self.assertIn("**Request**: [Do A](todos/a.md): via repo:org/other (claude/opus-5.5)",
+                      self.repo.read("rkm/log.md"))
+        self.repo.run("from", "a", "not an origin", ok=False)
+        self.repo.run("new", "todo", "b", "--title", "B", "--description", "d", "--from", "slack", ok=False)
+        self.assertFalse(self.repo.exists("rkm/todos/b.md"))
+        self.assertIn("all conformant", self.repo.run("check"))
+
+    def test_from_written_by_hand_is_checked(self):
+        self.new_todo()
+        text = self.repo.read("rkm/todos/a.md").replace("state: open\n", "state: open\nfrom: app:slack\n")
+        self.repo.write("rkm/todos/a.md", text)
+        self.assertIn("all conformant", self.repo.run("check"))
+        self.repo.run("from", "a", "app:linear")
+        self.assertIn("from:\n  - app:slack\n  - app:linear\n", self.repo.read("rkm/todos/a.md"))
+        self.repo.write("rkm/todos/a.md", text.replace("from: app:slack", "from: [app:slack, app:slack]"))
+        self.assertIn("`from` lists an origin twice", self.repo.run("check", ok=False))
+        self.repo.write("rkm/todos/a.md", text.replace("from: app:slack", "from: slack"))
+        self.assertIn("`from` entries are links", self.repo.run("check", ok=False))
+
+    def test_adopt_records_from(self):
+        self.repo.write("notes/Ask.md", "# Ask\n")
+        self.repo.run("adopt", "notes/Ask.md", "todo", "--description", "d", "--from", "app:slack")
+        self.assertIn("from:\n  - app:slack\n", self.repo.read("rkm/todos/ask.md"))
+        self.assertIn("from notes/Ask.md; via app:slack", self.repo.read("rkm/log.md"))
+
     def test_adopt_gives_a_bare_file_frontmatter(self):
         self.repo.write("rkm/todos/bare.md", "# Bare todo\n\nBody.\n")
         self.assertIn("give it some with `rkm adopt`", self.repo.run("check", ok=False))

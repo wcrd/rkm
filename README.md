@@ -61,6 +61,12 @@ the full RKM rules and command examples. Bring existing notes in with
 `rkm adopt <path> <kind>`: a file outside `rkm/` moves in, and links to it
 are rewritten.
 
+When an item was asked for somewhere else, such as a Slack thread, a chat or
+another repository, record it with `--from` on `new` or `adopt`: a link, or a
+`prefix:name` label like `app:slack` or `repo:org/name`. Each later place that
+asks for the same thing is added with `rkm from <id> <origin>`, so `from`
+lists every requester in order and the log dates each one.
+
 ## Optional separate knowledge history
 
 Save a global parent directory for RKM knowledge workspaces once:

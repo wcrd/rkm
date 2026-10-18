@@ -141,7 +141,7 @@
   }
   .byline { margin: 12px 0 0; font-size: clamp(20px, 3vw, 28px); font-weight: 600; letter-spacing: -0.015em; color: var(--text); }
   .lede { margin: 24px auto 0; max-width: 600px; font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); }
-  .lede em { color: var(--text); font-style: normal; }
+  .lede em { color: var(--accent); font-style: normal; font-weight: 500; }
 
   .install {
     margin: 36px auto 0; display: inline-flex; align-items: center; gap: 14px; max-width: 100%;
@@ -350,7 +350,7 @@
     <a class="pill" href="https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md"><b>OKF v0.2</b> Built on the Open Knowledge Format &rarr;</a>
     <h1>rkm</h1>
     <p class="byline">Repository Knowledge Management</p>
-    <p class="lede">Like PKM, but for your repo. Todos, bugs, decisions and specs <em>live with the code</em>, where you and your agents already look.</p>
+    <p class="lede">Like PKM, but for your repo. Todos, bugs, decisions and specs live with the code, right where you and your agents already look. <em>In the repo, but out of the diff.</em></p>
     <div class="install">
       <span><span class="dollar">$ </span><span id="install-cmd">uv tool install git+https://github.com/wcrd/rkm</span></span>
       <button class="copy" data-copy="install-cmd">Copy</button>
@@ -415,7 +415,7 @@ todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap r
     <p class="sub">By default, knowledge lives on an orphan <code style="font-size:15px;color:var(--code)">_rkm</code> branch with its own history, checked out once, beside your repo or in <a href="#one-folder" style="color:var(--accent);text-decoration:none">one folder for every project</a>. Add to it from any worktree, any agent, any time, and your code branches never see it.</p>
 
     <div class="card diagram">
-      <svg viewBox="0 0 960 300" role="img" aria-label="Code branches with feature worktrees, and a separate orphan _rkm branch whose single checkout lives in a global knowledge folder">
+      <svg viewBox="0 0 960 300" role="img" aria-label="Code branches with feature worktrees, and a separate orphan _rkm branch that shares no history with them">
         <defs>
           <linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="620" y2="0"><stop offset="0" style="stop-color:var(--accent)" stop-opacity="0"/><stop offset=".12" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent)"/></linearGradient>
         </defs>
@@ -442,16 +442,6 @@ todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap r
           <text x="100" y="262">docs(rkm)</text><text x="230" y="262">docs(todo)</text><text x="330" y="262">docs(bug)</text><text x="470" y="262">docs(spec)</text><text x="580" y="262">docs(todo)</text>
         </g>
 
-        <!-- global folder -->
-        <rect x="720" y="150" width="236" height="140" rx="12" style="fill:var(--accent-soft);stroke:var(--accent-line)"/>
-        <g font-size="12">
-          <text x="738" y="176" style="fill:var(--text)">~/rkm/</text>
-          <text x="752" y="202" style="fill:var(--accent)">widgets-3f2a9c/rkm/</text>
-          <text x="752" y="226" style="fill:var(--muted)">api-server-81d0e4/rkm/</text>
-          <text x="752" y="250" style="fill:var(--muted)">dotfiles-c5b7a1/rkm/</text>
-          <text x="752" y="274" style="fill:var(--faint)">&hellip;</text>
-        </g>
-        <path d="M670 232 C 690 232, 700 202, 744 198" fill="none" style="stroke:var(--accent)" stroke-width="1.5" stroke-dasharray="4 4"/>
         <!-- worktrees -->
         <rect x="720" y="40" width="236" height="84" rx="12" fill="none" style="stroke:var(--line-strong)"/>
         <g font-size="12">
@@ -459,7 +449,6 @@ todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap r
           <text x="752" y="90" style="fill:var(--muted)">widgets/</text>
           <text x="752" y="112" style="fill:var(--muted)">widgets-parser/</text>
         </g>
-        <text x="838" y="140" style="fill:var(--faint)" font-size="11" text-anchor="middle">rkm path finds it from any of them</text>
       </svg>
     </div>
 

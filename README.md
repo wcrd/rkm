@@ -11,29 +11,29 @@ you trust it with your files; that is why it is one file.
 
 ## Install
 
-With [uv](https://docs.astral.sh/uv/), from a clone of this repository:
+With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install ~/code/rkm
+uv tool install git+https://github.com/wcrd/rkm
 ```
 
 uv installs a snapshot of rkm with a Python it is happy with (3.11 or newer,
-fetched if need be) and puts `rkm` on PATH. The snapshot is separate from the
-clone: editing or checking out other commits in the clone changes nothing
-until you reinstall. `python3 rkm.py …` runs the clone in place without
-installing.
+fetched if need be) and puts `rkm` on PATH.
+
+To install from a clone instead, pass its path: `uv tool install ./rkm`. The
+snapshot is separate from the clone: editing or checking out other commits in
+the clone changes nothing until you reinstall. `python3 rkm.py …` runs the
+clone in place without installing.
 
 ## Updating
 
-Pull this repository, then reinstall:
-
 ```bash
-uv tool install --reinstall ~/code/rkm
+uv tool upgrade rkm
 ```
 
 Every repository uses the new version at once; `rkm --version` says which you
-have. (Installed from a git URL instead of a clone, `uv tool upgrade rkm` does
-both steps.)
+have. (Installed from a clone, pull it and run
+`uv tool install --reinstall <path to the clone>` instead.)
 
 A bundle's `rkm/config.toml` names the oldest rkm it works with:
 

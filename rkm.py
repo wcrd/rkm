@@ -33,7 +33,6 @@ in place. Each repository has its own rkm/config.toml.
   rkm set <id> title|description|tags|to <value>
   rkm touch <id>                   restamp `generated` after rewriting the body
   rkm from <id> <origin>           record another place that asked for it
-  rkm verify <id>                  human sign-off; refused for agents
   rkm mv <id> <new-id>             rename and rewrite every link to it
   rkm rm <id>                      delete; refused while anything links to it
   rkm ls [--type T] [--state S] [--status S] [--all] [--json]
@@ -306,8 +305,8 @@ KEY_ORDER = ["type", "title", "description", "state", "status", "decided", "tags
              "to", "from", "generated", "closed", "verified", "stale_after", "sources"]
 QUOTED = {"title", "description"}
 WRITES = {"type", "title", "description", "state", "status", "decided", "tags",
-          "to", "from", "generated", "closed", "verified"}
-BLOCK_LISTS = {"from", "verified"}
+          "to", "from", "generated", "closed"}
+BLOCK_LISTS = {"from"}
 
 DATE = re.compile(r"^\d{4}-\d\d-\d\d$")
 
@@ -1405,21 +1404,6 @@ def cmd_from(a):
     doc.save()
 
 
-def cmd_verify(a):
-    if is_agent():
-        raise Fail(f"verification is a human sign-off; ask the user to run `rkm verify`")
-    who = actor()
-    if not who.startswith("human:"):
-        raise Fail("only a human:<id> actor can verify")
-    doc = resolve(a.id)
-    v = doc.get("verified") or []
-    if isinstance(v, dict):
-        v = [v]
-    v = [x for x in v if x.get("by") != who] + [{"by": who, "at": now()}]
-    doc.set("verified", v)
-    doc.save()
-
-
 def move_file(old, new):
     """Move repo-relative `old` to `new` and rewrite every link to it."""
     # Compute every rewrite before writing any, so a failure changes nothing.
@@ -1607,12 +1591,6 @@ def problems():
                 bad("`from` entries are links or prefix:name labels, e.g. app:slack")
             elif len(set(f)) != len(f):
                 bad("`from` lists an origin twice")
-        v = d.get("verified")
-        if v is not None:
-            for x in v if isinstance(v, list) else [v]:
-                if not isinstance(x, dict) or not str(x.get("by", "")).startswith("human:") \
-                        or not TIMESTAMP.match(str(x.get("at", ""))):
-                    bad("`verified` entries are { by: human:<id>, at: <ISO 8601 with offset> }")
         if rel.startswith("todos/done/"):
             bad("todos/done/ is gone; a closed item keeps its path and has state: done")
     # Links into the bundle must resolve, from anywhere in the repo.
@@ -1709,8 +1687,6 @@ rkm check                         # conformance: frontmatter, links, index
   Turning a todo into a bug changes `type`, not the directory.
 - **`status` is not progress.** It is OKF's lifecycle of the document
   (`draft`, `stable`, `deprecated`); a todo's progress is `state`.
-- **`verify` is a human sign-off.** rkm refuses it from an agent. A file only
-  an agent wrote, with no `verified`, is unreviewed; say so when you rely on it.
 - **`from` says where an item was asked for**, when that was outside this
   repo: a link to the thread, issue or chat if there is one, else a label
   such as `app:slack` or `repo:org/name`. It lists the first place, then each
@@ -2048,9 +2024,6 @@ def main(argv=None):
     p.add_argument("field", choices=("title", "description", "tags", "to"))
     p.add_argument("value")
     p.set_defaults(fn=cmd_set)
-    p = sub.add_parser("verify")
-    p.add_argument("id")
-    p.set_defaults(fn=cmd_verify)
     p = sub.add_parser("mv")
     p.add_argument("id")
     p.add_argument("new")

@@ -123,11 +123,15 @@ class RkmTest(unittest.TestCase):
     def test_unknown_keys_survive_a_write(self):
         self.repo.write("rkm/todos/k.md", '---\ntype: Todo\ntitle: "K"\ndescription: "d"\n'
                         "state: open\nowner:   someone   # kept as written\nsources:\n"
-                        "  - id: s\n    resource: https://example.com\n---\n# K\n")
+                        "  - id: s\n    resource: https://example.com\n"
+                        "verified:\n  - { by: human:old, at: 2026-01-01T00:00Z }\n---\n# K\n")
         self.repo.run("close", "k")
         text = self.repo.read("rkm/todos/k.md")
         self.assertIn("owner:   someone   # kept as written\n", text)
         self.assertIn("sources:\n  - id: s\n    resource: https://example.com\n", text)
+        # A sign-off from the removed `rkm verify` is kept as written.
+        self.assertIn("verified:\n  - { by: human:old, at: 2026-01-01T00:00Z }\n", text)
+        self.repo.run("check")
 
     def test_set_title_follows_the_heading(self):
         self.new_todo()
@@ -203,14 +207,6 @@ class RkmTest(unittest.TestCase):
         self.repo.run("new", "todo", "--title", "!!!", ok=False)
         self.repo.run("new", "decision", "--title", "05 Things")
         self.assertTrue(self.repo.exists("rkm/decisions/01-05-things.md"))
-        self.repo.run("check")
-
-    def test_only_a_human_verifies(self):
-        self.new_todo()
-        self.repo.run("verify", "a", actor="claude/opus-5.5", agent=True, ok=False)
-        self.repo.run("verify", "a", actor="process:nightly", ok=False)
-        self.repo.run("verify", "a")
-        self.assertIn(f"verified:\n  - {{ by: human:tester, at: {NOW} }}\n", self.repo.read("rkm/todos/a.md"))
         self.repo.run("check")
 
     def test_from_records_each_place_that_asked(self):

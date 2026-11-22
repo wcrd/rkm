@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **`rkm verify` is gone.** Nothing read its sign-off, and a later edit didn't
+  clear it, so a document could look reviewed after an agent rewrote it. An
+  existing `verified` field is kept as written and still passes `check`.
+
 ## 0.4.0 — 2026-11-22
 
 Merging

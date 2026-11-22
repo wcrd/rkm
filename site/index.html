@@ -27,6 +27,7 @@
     --accent-soft: #ffffff;
     --accent-line: rgba(180, 18, 63, 0.45);
     --code: #27272a;
+    --out: #3f5b78;
     --code-bg: #f7f7f8;
     --bar-bg: rgba(255, 255, 255, 0.88);
     --metal: linear-gradient(180deg, #ef6787 20%, #c0174a 40%, #74092a 57%, #a8103c 57.5%, #e6567a 74%, #f59ab0 79%, #8c0c31 92%);
@@ -42,7 +43,7 @@
       --bg: #111113; --bg-2: #18181b; --text: #f4f4f5; --muted: #a1a1aa; --faint: #808089;
       --line: #27272a; --line-strong: #3f3f46; --surface: #18181b; --surface-2: #232326; --hover: #232326;
       --accent: #ff5c7c; --accent-soft: #18181b; --accent-line: rgba(255, 92, 124, 0.45);
-      --code: #e4e4e7; --code-bg: #18181b; --bar-bg: rgba(17, 17, 19, 0.88);
+      --code: #e4e4e7; --out: #9db4cc; --code-bg: #18181b; --bar-bg: rgba(17, 17, 19, 0.88);
       --metal: linear-gradient(180deg, #ffd0da 20%, #ff6f8d 40%, #a8143b 57%, #d92c56 57.5%, #ff9fb4 74%, #ffe0e7 79%, #c42a52 92%); --green: #7ee2a8; --amber: #f5c26b;
       color-scheme: dark;
     }
@@ -51,7 +52,7 @@
     --bg: #111113; --bg-2: #18181b; --text: #f4f4f5; --muted: #a1a1aa; --faint: #808089;
     --line: #27272a; --line-strong: #3f3f46; --surface: #18181b; --surface-2: #232326; --hover: #232326;
     --accent: #ff5c7c; --accent-soft: #18181b; --accent-line: rgba(255, 92, 124, 0.45);
-    --code: #e4e4e7; --code-bg: #18181b; --bar-bg: rgba(17, 17, 19, 0.88);
+    --code: #e4e4e7; --out: #9db4cc; --code-bg: #18181b; --bar-bg: rgba(17, 17, 19, 0.88);
       --metal: linear-gradient(180deg, #ffd0da 20%, #ff6f8d 40%, #a8143b 57%, #d92c56 57.5%, #ff9fb4 74%, #ffe0e7 79%, #c42a52 92%); --green: #7ee2a8; --amber: #f5c26b;
     color-scheme: dark;
   }
@@ -140,7 +141,7 @@
     h1 { background: var(--metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
   }
   .byline { margin: 12px 0 0; font-size: clamp(20px, 3vw, 28px); font-weight: 600; letter-spacing: -0.015em; color: var(--text); }
-  .lede { margin: 24px auto 0; max-width: 600px; font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); }
+  .lede { margin: 24px auto 0; max-width: 820px; text-wrap: balance; font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); }
   .lede em { color: var(--accent); font-style: normal; font-weight: 500; }
 
   .install {
@@ -170,10 +171,11 @@
   .term-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
   .term-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
   .term-bar span { margin-left: 8px; font: 12px var(--mono); color: var(--faint); }
-  .term pre { margin: 0; padding: 20px 22px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; color: var(--code); }
+  .term pre { margin: 0; padding: 20px 22px; overflow-x: auto; font-size: 14px; line-height: 1.7; color: var(--code); }
   .p { color: var(--accent); user-select: none; }
   .c { color: var(--faint); }
-  .o { color: var(--muted); }
+  .o { color: var(--out); }
+  .x { color: var(--text); font-weight: 500; }
   .g { color: var(--green); }
   .a { color: var(--amber); }
   .hero-term { margin: 64px auto 0; max-width: 820px; }
@@ -182,8 +184,8 @@
   section { padding: 110px 0 0; scroll-margin-top: -40px; }
   #start { scroll-margin-top: 80px; }
   .eyebrow { font: 500 13px var(--mono); color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
-  h2 { margin: 12px 0 0; font-size: clamp(30px, 4.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700; max-width: 720px; }
-  .sub { margin: 16px 0 0; max-width: 640px; color: var(--muted); font-size: 17px; }
+  h2 { margin: 12px 0 0; font-size: clamp(30px, 4.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700; max-width: 920px; text-wrap: balance; }
+  .sub { margin: 16px 0 0; max-width: 820px; text-wrap: pretty; color: var(--muted); font-size: 17px; }
   .center { text-align: center; }
   .center h2, .center .sub { margin-left: auto; margin-right: auto; }
 
@@ -219,9 +221,9 @@
   }
   .catch::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
   .catch-label { font: 500 12px var(--mono); color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
-  .catch-q { margin: 8px 0 0; font-size: clamp(19px, 2.2vw, 22px); line-height: 1.3; letter-spacing: -0.015em; font-weight: 700; max-width: 760px; }
-  .catch-a { margin: 8px 0 0; font-size: 16px; line-height: 1.55; color: var(--text); max-width: 720px; }
-  .catch-note { margin: 8px 0 0; font-size: 14px; color: var(--muted); max-width: 680px; }
+  .catch-q { margin: 8px 0 0; font-size: clamp(19px, 2.2vw, 22px); line-height: 1.3; letter-spacing: -0.015em; font-weight: 700; }
+  .catch-a { margin: 8px 0 0; font-size: 16px; line-height: 1.55; color: var(--text); }
+  .catch-note { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
   .catch a { color: var(--accent); text-decoration: none; }
   .catch a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
@@ -241,6 +243,8 @@
     display: grid; grid-template-columns: 110px 1fr; gap: 16px; align-items: baseline;
     padding: 14px 18px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line);
   }
+  .split .term pre { font-size: 13px; }
+  #extend .split { align-items: stretch; }
   .type code { font-size: 13.5px; color: var(--accent); }
   .type span { color: var(--muted); font-size: 14.5px; }
   .type .tracked { font: 500 11px var(--mono); color: var(--faint); margin-left: 6px; }
@@ -286,6 +290,9 @@
   .steps .skip code { font-size: 13px; color: var(--code); }
   .steps .skip a { color: var(--accent); text-decoration: none; }
   .steps .install { margin: 0; display: flex; width: 100%; justify-content: space-between; }
+  .after { margin: 32px auto 0; max-width: 600px; text-align: left; font-size: 14px; color: var(--muted); }
+  .after code { font-size: 13px; color: var(--code); }
+  .after a { color: var(--accent); text-decoration: none; }
   footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 40px 0 56px; color: var(--faint); font-size: 14px; }
   footer nav { display: flex; gap: 24px; }
   footer a { text-decoration: none; }
@@ -328,6 +335,7 @@
       <a href="#branch">Branch</a>
       <a href="#one-folder">One folder</a>
       <a href="#structure">Structure</a>
+      <a href="#extend">Extend</a>
       <a href="#cli">Commands</a>
       <a href="#more">Agents</a>
       <a class="go" href="#start">Get started</a>
@@ -359,18 +367,18 @@
 
     <div class="term hero-term">
       <div class="term-bar"><i></i><i></i><i></i><span>~/code/widgets</span></div>
-<pre><span class="p">$</span> rkm new todo --title "Swap regex engine" --description "re is too slow on large inputs."
+<pre><span class="p">$</span> <span class="x">rkm new todo --title "Swap regex engine" --description "re is too slow on large inputs."</span>
 <span class="o">rkm/todos/swap-regex-engine.md</span>
-<span class="p">$</span> rkm new decision --title "Use TOML for config"
+<span class="p">$</span> <span class="x">rkm new decision --title "Use TOML for config"</span>
 <span class="o">rkm/decisions/01-use-toml-for-config.md</span>
-<span class="p">$</span> rkm close parser-drops-trailing-comment --note "fixed in a1b2c3"
-<span class="p">$</span> rkm ls
-<span class="c">ID                                TYPE      STATE  TITLE</span>
+<span class="p">$</span> <span class="x">rkm close parser-drops-trailing-comment --note "fixed in a1b2c3"</span>
+<span class="p">$</span> <span class="x">rkm ls</span>
+<span class="o">ID                                TYPE      STATE  TITLE
 decisions/01-use-toml-for-config  Decision         Use TOML for config
 spec/query-grammar                Spec             Query grammar
 todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap regex engine
-<span class="c">1 closed or deprecated hidden; --all shows them</span>
-<span class="p">$</span> rkm check
+1 closed or deprecated hidden; --all shows them</span>
+<span class="p">$</span> <span class="x">rkm check</span>
 <span class="g">rkm: 4 concepts, all conformant</span></pre>
     </div>
   </header>
@@ -378,7 +386,7 @@ todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap r
   <section id="why" class="compare">
     <div class="eyebrow">In repo vs. out of repo</div>
     <h2>Where should project knowledge live?</h2>
-    <p class="sub">I've tried both. Wikis and trackers are tidy until they drift from the code they describe. Notes in the repo stay true, and every agent can read them without a login.</p>
+    <p class="sub">In repo vs. out of repo. I've tried both. Wikis, note taking apps, and trackers are tidy until they drift from the code they describe. Notes in the repo stay true, and every agent can read them without a login. What notes in the repo lose is the 'single' source of truth you can search for tasks across your projects; that is solved by <a href="#one-folder">a common `rkm` directory.</a> </p>
     <div class="grid g2">
       <div class="card out">
         <div class="tag">Out of repo &mdash; wiki, tracker, ~/notes</div>
@@ -499,7 +507,7 @@ todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap r
     </div>
     <div class="term one-folder-term">
       <div class="term-bar"><i></i><i></i><i></i><span>~</span></div>
-<pre><span class="p">$</span> rg -l "rate limit" ~/rkm
+<pre><span class="p">$</span> <span class="x">rg -l "rate limit" ~/rkm</span>
 <span class="o">widgets-3f2a9c/rkm/decisions/04-retry-with-backoff.md</span>
 <span class="o">api-server-81d0e4/rkm/spec/rate-limits.md</span>
 <span class="o">api-server-81d0e4/rkm/bugs/burst-limit-ignored.md</span></pre>
@@ -528,11 +536,12 @@ todos/swap-regex-engine           Todo      <span class="a">open</span>   Swap r
       <div class="types">
         <div class="type"><code>todos/</code><span>Planned work, one item per file. <span class="tracked">open | done</span></span></div>
         <div class="type"><code>bugs/</code><span>Behaviour that's wrong, with a repro. <span class="tracked">open | done</span></span></div>
+        <div class="type"><code>requests/</code><span>What you need from another repo or team. <span class="tracked">open | asked | done</span></span></div>
         <div class="type"><code>decisions/</code><span>Why the project is the way it is. Numbered, one call per file.</span></div>
         <div class="type"><code>spec/</code><span>How a feature behaves.</span></div>
         <div class="type"><code>roadmap/</code><span>Multi-phase plans.</span></div>
         <div class="type"><code>process/</code><span>How to make a kind of change.</span></div>
-        <div class="type"><code>your own</code><span>Add a type in <code style="color:var(--code)">config.toml</code>: its folder, index section and template.</span></div>
+        <div class="type"><code>your own</code><span>Add a type in <code style="color:var(--code)">config.toml</code>. <a href="#extend" style="color:var(--accent);text-decoration:none">See how</a></span></div>
       </div>
       <div class="term">
         <div class="term-bar"><i></i><i></i><i></i><span>rkm/todos/swap-regex-engine.md</span></div>
@@ -556,6 +565,62 @@ Benchmark re2 against the current engine; see
     </div>
   </section>
 
+  <section id="extend">
+    <div class="eyebrow">Extensible</div>
+    <h2>Make it yours.</h2>
+    <p class="sub">Each repository sets its own types and rules in <code style="font-size:15px;color:var(--code)">rkm/config.toml</code>. A new type works with every command, gets its own index section, and is explained to agents by <code style="font-size:15px;color:var(--code)">rkm conventions</code>.</p>
+    <div class="split">
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>rkm/config.toml</span></div>
+<pre><span class="a">requires</span>    = "0.4"   <span class="c"># older rkm refuses the bundle</span>
+<span class="a">push_policy</span> = "Push knowledge after every merge."
+
+<span class="p">[types.RFC]</span>              <span class="c"># add your own type</span>
+<span class="a">dir</span>      = "rfcs"
+<span class="a">section</span>  = "Open RFCs"
+<span class="a">states</span>   = ["open", "review", "done"]
+<span class="a">template</span> = "## Problem\n\n## Proposal\n"
+<span class="a">about</span>    = "A change up for discussion."
+
+<span class="p">[types.Bug]</span>              <span class="c"># change a default</span>
+<span class="a">template</span> = "## Repro\n\n## Expected\n\n## Severity\n"
+
+<span class="p">[commits]</span>                <span class="c"># your commit rules</span>
+<span class="a">template</span> = "kb({kind}): {summary}"
+<span class="a">pattern</span>  = 'kb\(\w+\): .+'
+<span class="a">guidance</span> = "Write kb(&lt;kind&gt;): &lt;summary&gt;."</pre>
+      </div>
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>~/code/widgets</span></div>
+<pre><span class="p">$</span> <span class="x">rkm new rfc --title "Plugin API"</span>
+<span class="o">rkm/rfcs/plugin-api.md</span>
+<span class="p">$</span> <span class="x">rkm state plugin-api review</span>
+<span class="p">$</span> <span class="x">rkm state plugin-api merged</span>
+<span class="o">rkm: a RFC's state is one of open, review, done</span>
+<span class="p">$</span> <span class="x">rkm ls --type rfc</span>
+<span class="o">ID               TYPE  STATE   TITLE
+rfcs/plugin-api  RFC   <span class="a">review</span>  Plugin API</span>
+<span class="p">$</span> <span class="x">rkm commit --summary "propose plugin API"</span>
+<span class="o">Recorded knowledge on _rkm</span>
+<span class="c"># message: kb(rfc): propose plugin API</span></pre>
+      </div>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <h3>Your own types</h3>
+        <p>Give a type a folder, an index section, a body template and its own states, from <code>open</code> to <code>done</code> with any steps between.</p>
+      </div>
+      <div class="card">
+        <h3>Your commit format</h3>
+        <p><code>[commits]</code> sets the message template and a <code>pattern</code> every knowledge commit must match. Agents see your <code>guidance</code> when they miss it.</p>
+      </div>
+      <div class="card">
+        <h3>Typos fail loudly</h3>
+        <p>An unknown key or a bad state list stops every command with an error naming it, instead of being quietly ignored.</p>
+      </div>
+    </div>
+  </section>
+
   <section id="cli">
     <div class="eyebrow">The CLI</div>
     <h2>Small commands, one job each.</h2>
@@ -564,49 +629,49 @@ Benchmark re2 against the current engine; see
       <div class="card cmd">
         <h3>Set up</h3>
         <p>Optionally pick one folder for all your knowledge, then start a bundle in any repo.</p>
-<pre><span class="p">$</span> rkm config --workspace-root ~/rkm   <span class="c"># optional, once</span>
-<span class="p">$</span> rkm init                            <span class="c"># per repo</span></pre>
+<pre><span class="p">$</span> <span class="x">rkm config --workspace-root ~/rkm</span>   <span class="c"># optional, once</span>
+<span class="p">$</span> <span class="x">rkm init</span>                            <span class="c"># per repo</span></pre>
       </div>
       <div class="card cmd">
         <h3>Capture</h3>
         <p>Slugs come from the title. Templates fill in the body headings.</p>
-<pre><span class="p">$</span> rkm new bug --title "Parser drops trailing comment"
-<span class="p">$</span> rkm new spec --title "Query grammar"
-<span class="p">$</span> rkm adopt docs/design.md spec   <span class="c"># bring old notes in</span></pre>
+<pre><span class="p">$</span> <span class="x">rkm new bug --title "Parser drops trailing comment"</span>
+<span class="p">$</span> <span class="x">rkm new spec --title "Query grammar"</span>
+<span class="p">$</span> <span class="x">rkm adopt docs/design.md spec</span>   <span class="c"># bring old notes in</span></pre>
       </div>
       <div class="card cmd">
         <h3>Track</h3>
         <p>Todos and bugs carry state. Closed work drops out of <code>ls</code>.</p>
-<pre><span class="p">$</span> rkm ls --type todo
-<span class="p">$</span> rkm close swap-regex-engine --note "done in 9f1e0d"
-<span class="p">$</span> rkm status query-grammar stable</pre>
+<pre><span class="p">$</span> <span class="x">rkm ls --type todo</span>
+<span class="p">$</span> <span class="x">rkm close swap-regex-engine --note "done in 9f1e0d"</span>
+<span class="p">$</span> <span class="x">rkm status query-grammar stable</span></pre>
       </div>
       <div class="card cmd">
         <h3>Reorganise safely</h3>
         <p>Renames rewrite every link. Deletes are refused while anything still points at the file.</p>
-<pre><span class="p">$</span> rkm mv todos/swap-regex-engine todos/adopt-re2
-<span class="p">$</span> rkm rm todos/adopt-re2
+<pre><span class="p">$</span> <span class="x">rkm mv todos/swap-regex-engine todos/adopt-re2</span>
+<span class="p">$</span> <span class="x">rkm rm todos/adopt-re2</span>
 <span class="o">rkm: todos/adopt-re2 is still linked from: rkm/spec/query-grammar.md</span></pre>
       </div>
       <div class="card cmd">
         <h3>Commit</h3>
         <p>Conventional Commits by default, or your team's own template and pattern.</p>
-<pre><span class="p">$</span> rkm commit --summary "record parser bug"
+<pre><span class="p">$</span> <span class="x">rkm commit --summary "record parser bug"</span>
 <span class="c"># message: docs(bug): record parser bug</span></pre>
       </div>
       <div class="card cmd">
         <h3>Find it</h3>
         <p>It's just files. Use whatever you already use.</p>
-<pre><span class="p">$</span> rg -l regex "$(rkm path)"
-<span class="p">$</span> rkm ls --json | jq '.[].title'
-<span class="p">$</span> rkm check            <span class="c"># run it in CI</span></pre>
+<pre><span class="p">$</span> <span class="x">rg -l regex "$(rkm path)"</span>
+<span class="p">$</span> <span class="x">rkm ls --json | jq '.[].title'</span>
+<span class="p">$</span> <span class="x">rkm check</span>            <span class="c"># run it in CI</span></pre>
       </div>
     </div>
   </section>
 
   <section id="more">
     <div class="eyebrow">Also</div>
-    <h2>Built for agents, kept honest by people.</h2>
+    <h2>Built for agents and the teams they work with.</h2>
     <div class="grid g3">
       <div class="card">
         <h3>AGENTS.md, managed</h3>
@@ -617,8 +682,8 @@ Benchmark re2 against the current engine; see
         <p>Set <code>RKM_ACTOR=claude/opus-5.5</code> and each document records who wrote it and when.</p>
       </div>
       <div class="card">
-        <h3>Human sign-off</h3>
-        <p><code>rkm verify</code> marks a document as checked by a person. Agents are refused.</p>
+        <h3>Asks across teams</h3>
+        <p>A request names who it's for with <code>to</code>, and <code>from</code> links the thread, issue or chat where it came up.</p>
       </div>
       <div class="card">
         <h3>Safe in parallel</h3>
@@ -629,8 +694,8 @@ Benchmark re2 against the current engine; see
         <p>RKM commits knowledge; it never pushes. Set a <code>push_policy</code> to tell agents your rule.</p>
       </div>
       <div class="card">
-        <h3>Typo-proof config</h3>
-        <p>One optional <code>config.toml</code> per repo. Unknown keys are errors, not silent no-ops.</p>
+        <h3>Merge-friendly</h3>
+        <p>No shared log to fight over. <code>rkm index</code> rebuilds a conflicted index after a merge, and <code>rkm check</code> flags leftover conflict markers.</p>
       </div>
     </div>
   </section>
@@ -658,6 +723,7 @@ Benchmark re2 against the current engine; see
         </div>
       </li>
     </ol>
+    <p class="after">That's it. <code>rkm init</code> adds a short section to <code>AGENTS.md</code>; commit it with your code, and any agent that reads it will use rkm from then on. Using Claude Code? Add <code>@AGENTS.md</code> to your <code>CLAUDE.md</code>. To curate it yourself, edit the files directly or use <a href="#cli">the rkm CLI</a>.</p>
   </div>
 
   <section id="reference">
@@ -699,7 +765,6 @@ Benchmark re2 against the current engine; see
           <dt><code>rkm state &lt;id&gt; &lt;state&gt;</code></dt><dd>A state between open and done, such as <code>asked</code>.</dd>
           <dt><code>rkm from &lt;id&gt; &lt;origin&gt;</code></dt><dd>Record another place that asked for it.</dd>
           <dt><code>rkm status &lt;id&gt; draft|stable|deprecated</code></dt><dd>The document's lifecycle, separate from progress.</dd>
-          <dt><code>rkm verify &lt;id&gt;</code></dt><dd>Human sign-off; refused for agents.</dd>
         </dl>
       </div>
       <div class="card ref-group">

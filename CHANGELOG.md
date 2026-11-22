@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Merging
+
+- **rkm no longer writes `log.md`.** Every command inserted its entry at the
+  top of the file, so two clones recording knowledge at once conflicted on
+  every merge. Version control records each change instead. An existing
+  `log.md` is left alone as history (and still checked); delete it if you
+  don't want it. Without it, `init` starts a bundle with `index.md` and
+  `config.toml`.
+- `rkm close --note` keeps the note in `closed`, e.g.
+  `closed: { by: …, at: …, note: "landed in a1b2c3" }`. `--note` is gone from
+  `reopen`, `state`, `touch` and `rm`; put the context in the commit message.
+- `rkm index` regenerates `index.md` even when it holds conflict markers, so
+  running it resolves an index conflict after a merge. It refuses while
+  another bundle file still has conflicts, rather than build an index that
+  leaves out that document.
+- `rkm check` reports conflict markers in any bundle file.
+
 ## 0.3.0 — 2026-10-17
 
 Storage

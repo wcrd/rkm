@@ -241,7 +241,7 @@ class BranchStorageTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.root, "rkm/spec/conflicted.md")))
         self.assertFalse(os.path.exists(self.workspace))
 
-    def test_concurrent_commands_keep_all_notes_and_log_entries(self):
+    def test_concurrent_commands_keep_all_notes_and_index_entries(self):
         self.enable()
         processes = [subprocess.Popen([sys.executable, "-I", RKM, "new", "todo", f"item-{i}",
                                       "--title", f"Item {i}", "--description", "d"],
@@ -251,9 +251,9 @@ class BranchStorageTest(unittest.TestCase):
             out, err = p.communicate(timeout=30)
             self.assertEqual(p.returncode, 0, out + err)
         self.run_rkm("check")
-        log = self.read("rkm/log.md", self.workspace)
+        index = self.read("rkm/index.md", self.workspace)
         for i in range(6):
-            self.assertIn(f"[Item {i}](todos/item-{i}.md)", log)
+            self.assertIn(f"[Item {i}](todos/item-{i}.md)", index)
         self.assertEqual(len(json.loads(self.run_rkm("ls", "--json"))), 6)
 
     def test_custom_branch_name_and_project_name(self):
@@ -280,7 +280,7 @@ class BranchStorageTest(unittest.TestCase):
             self.command("jj", "bookmark", "forget", "_rkm", cwd=clone)
         self.run_rkm("init", "--branch", "--workspace", destination, cwd=clone)
         self.assertIn("todos/a", self.run_rkm("ls", cwd=clone))
-        self.assertEqual(self.read("rkm/log.md", self.workspace), self.read("rkm/log.md", destination))
+        self.assertEqual(self.read("rkm/index.md", self.workspace), self.read("rkm/index.md", destination))
         self.run_rkm("check", cwd=clone)
 
     def test_old_in_tree_copy_is_not_silently_ignored(self):

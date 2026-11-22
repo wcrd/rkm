@@ -63,14 +63,14 @@ class RkmTest(unittest.TestCase):
     def new_todo(self, slug="a", title="Do A"):
         self.repo.run("new", "todo", slug, "--title", title, "--description", f"Why {slug}.")
 
-    def test_new_writes_frontmatter_index_and_log(self):
+    def test_new_writes_frontmatter_and_index_but_not_the_log(self):
         self.new_todo()
         text = self.repo.read("rkm/todos/a.md")
         self.assertTrue(text.startswith(
             '---\ntype: Todo\ntitle: "Do A"\ndescription: "Why a."\nstate: open\n'
             f"generated: {{ by: human:tester, at: {NOW} }}\n---\n# Do A\n"))
         self.assertIn("* [Do A](todos/a.md) - Why a.", self.repo.read("rkm/index.md"))
-        self.assertIn("**Creation**: [Do A](todos/a.md)", self.repo.read("rkm/log.md"))
+        self.assertEqual(self.repo.read("rkm/log.md"), "# Update log\n")
         self.assertIn("all conformant", self.repo.run("check"))
 
     def test_new_refuses_a_taken_slug(self):
@@ -79,17 +79,37 @@ class RkmTest(unittest.TestCase):
 
     def test_close_and_reopen(self):
         self.new_todo()
-        self.repo.run("close", "a", "--note", "landed")
+        self.repo.run("close", "a", "--note", "landed in abc123")
         text = self.repo.read("rkm/todos/a.md")
         self.assertIn("state: done\n", text)
-        self.assertIn(f"closed: {{ by: human:tester, at: {NOW} }}", text)
+        self.assertIn(f'closed: {{ by: human:tester, at: {NOW}, note: "landed in abc123" }}', text)
+        self.assertIn("all conformant", self.repo.run("check"))
         index = self.repo.read("rkm/index.md")
         self.assertIn("# Closed", index)
         self.assertIn("[Do A](todos/a.md) (todo)", index)
         self.repo.run("close", "a", ok=False)
         self.repo.run("reopen", "a")
         self.assertNotIn("closed:", self.repo.read("rkm/todos/a.md"))
+        self.repo.run("close", "a")
+        self.assertIn(f"closed: {{ by: human:tester, at: {NOW} }}\n", self.repo.read("rkm/todos/a.md"))
         self.repo.run("check")
+
+    def test_index_resolves_its_own_conflicts_but_not_a_documents(self):
+        self.new_todo()
+        self.new_todo("b", "Do B")
+        index = self.repo.read("rkm/index.md")
+        self.repo.write("rkm/index.md", "<<<<<<< ours\n" + index + "=======\nother\n>>>>>>> theirs\n")
+        out = self.repo.run("check", ok=False)
+        self.assertIn("index.md: conflict markers; run `rkm index`", out)
+        self.assertNotIn("out of date", out)
+        a = self.repo.read("rkm/todos/a.md")
+        self.repo.write("rkm/todos/a.md", a + "<<<<<<< Conflict 1 of 1\n%%%%%%% side\n>>>>>>> Conflict 1 of 1 ends\n")
+        self.assertIn("resolve the conflicts in todos/a.md first", self.repo.run("index", ok=False))
+        self.assertIn("todos/a.md: conflict markers; resolve them", self.repo.run("check", ok=False))
+        self.repo.write("rkm/todos/a.md", a)
+        self.repo.run("index")
+        self.assertEqual(self.repo.read("rkm/index.md"), index)
+        self.assertIn("all conformant", self.repo.run("check"))
 
     def test_retype_keeps_the_path(self):
         self.new_todo()
@@ -198,14 +218,11 @@ class RkmTest(unittest.TestCase):
         self.repo.run("new", "todo", "a", "--title", "Do A", "--description", "d", "--from", url)
         text = self.repo.read("rkm/todos/a.md")
         self.assertIn(f"state: open\nfrom:\n  - {url}\ngenerated: ", text)
-        self.assertIn(f"**Creation**: [Do A](todos/a.md): via {url}", self.repo.read("rkm/log.md"))
         self.repo.run("from", "a", "repo:org/other", actor="claude/opus-5.5", agent=True)
         self.assertIn("already lists", self.repo.run("from", "a", url))
         self.repo.run("touch", "a")
         text = self.repo.read("rkm/todos/a.md")
         self.assertIn(f"from:\n  - {url}\n  - repo:org/other\n", text)
-        self.assertIn("**Request**: [Do A](todos/a.md): via repo:org/other (claude/opus-5.5)",
-                      self.repo.read("rkm/log.md"))
         self.repo.run("from", "a", "not an origin", ok=False)
         self.repo.run("new", "todo", "b", "--title", "B", "--description", "d", "--from", "slack", ok=False)
         self.assertFalse(self.repo.exists("rkm/todos/b.md"))
@@ -227,7 +244,6 @@ class RkmTest(unittest.TestCase):
         self.repo.write("notes/Ask.md", "# Ask\n")
         self.repo.run("adopt", "notes/Ask.md", "todo", "--description", "d", "--from", "app:slack")
         self.assertIn("from:\n  - app:slack\n", self.repo.read("rkm/todos/ask.md"))
-        self.assertIn("from notes/Ask.md; via app:slack", self.repo.read("rkm/log.md"))
 
     def test_request_is_put_to_someone_and_asked(self):
         self.repo.run("new", "request", "--title", "Comma links", "--description", "d",
@@ -236,9 +252,8 @@ class RkmTest(unittest.TestCase):
         self.assertIn("state: open\nto: repo:org/okit\ngenerated: ", text)
         self.assertIn("**Hit in:**", text)
         self.assertIn("# Open requests", self.repo.read("rkm/index.md"))
-        self.repo.run("state", "comma-links", "asked", "--note", "raised in #okd")
+        self.repo.run("state", "comma-links", "asked")
         self.assertIn("state: asked\n", self.repo.read("rkm/requests/comma-links.md"))
-        self.assertIn("state asked: raised in #okd", self.repo.read("rkm/log.md"))
         self.assertIn("requests/comma-links", self.repo.run("ls", "--state", "asked"))
         self.assertIn("all conformant", self.repo.run("check"))
         self.repo.run("state", "comma-links", "done", ok=False)
@@ -303,7 +318,6 @@ class RkmTest(unittest.TestCase):
         self.repo.write("README.md", "nothing\n")
         self.repo.run("rm", "a")
         self.assertFalse(self.repo.exists("rkm/todos/a.md"))
-        self.assertIn("**Deletion**", self.repo.read("rkm/log.md"))
         self.repo.run("check")
 
     def test_adopt_moves_a_file_in_from_outside(self):
@@ -315,7 +329,6 @@ class RkmTest(unittest.TestCase):
         self.assertTrue(text.startswith('---\ntype: Process\ntitle: "Testing"\n'))
         self.assertIn("[up](../../README.md), [kit](../../../kit/x.md)", text)
         self.assertIn("See [rkm/process/testing.md](rkm/process/testing.md#run).", self.repo.read("README.md"))
-        self.assertIn("from notes/Testing.md", self.repo.read("rkm/log.md"))
         self.repo.write("old/Survey.md", "# Survey\n")
         self.repo.run("adopt", "old/Survey.md", "guide", "--as", "archive/survey",
                       "--status", "deprecated", "--description", "d")
@@ -490,8 +503,7 @@ class InitTest(unittest.TestCase):
         self.assertIn(self.repo.run("agents"), out)
         minor = ".".join(VERSION.split(".")[:2])
         self.assertIn(f'name = "widgets"\nrequires = "{minor}"\n', self.repo.read("rkm/config.toml"))
-        self.assertIn(f"**Initialization**: Created rkm/ with rkm {VERSION} (human:tester)",
-                      self.repo.read("rkm/log.md"))
+        self.assertFalse(self.repo.exists("rkm/log.md"))
         self.assertFalse(self.repo.exists("scripts"))
         self.assertIn("0 concepts, all conformant", self.repo.run("check"))
         self.assertIn("already has an rkm/ bundle", self.repo.run("init", "--in-tree", ok=False))

@@ -55,8 +55,8 @@ rkm init
 ```
 
 `init` creates an orphan `_rkm` knowledge branch (a jj workspace and
-bookmark, else a Git worktree) and starts the bundle on it: `rkm/index.md`,
-`log.md` and `config.toml` with `name` and `requires`. The checkout goes under
+bookmark, else a Git worktree) and starts the bundle on it: `rkm/index.md`
+and `config.toml` with `name` and `requires`. The checkout goes under
 the global workspace root when one is saved, else beside the repository in
 `../<repo>-rkm`; `rkm path` prints where. `init` also writes a short bootstrap
 section to `AGENTS.md` for you to review and commit with the code.
@@ -81,7 +81,7 @@ When an item was asked for somewhere else, such as a Slack thread, a chat or
 another repository, record it with `--from` on `new` or `adopt`: a link, or a
 `prefix:name` label like `app:slack` or `repo:org/name`. Each later place that
 asks for the same thing is added with `rkm from <id> <origin>`, so `from`
-lists every requester in order and the log dates each one.
+lists every requester in order and version control dates each one.
 
 The other direction is a Request: what this repo wants from another repo or
 team. `rkm new request --title "…" --to repo:org/name` files one, `rkm state
@@ -193,9 +193,15 @@ code and knowledge retain the logical in-tree layout (`rkm/...` from code,
 Markdown viewers may not resolve links crossing that boundary; use `rkm path`
 to locate knowledge files. `new` and `mv` print physical paths in branch mode.
 
-RKM commands sharing a bundle use an OS lock so concurrent log/index writes
+RKM commands sharing a bundle use an OS lock so concurrent index writes
 do not overwrite each other. Coordinate manual body edits and VCS operations
 in the shared workspace. Stop other edits while migrating.
+
+Clones that record knowledge independently merge like any other branches.
+rkm keeps no shared log file, so new documents merge cleanly. `index.md` can
+still conflict, but it is generated: run `rkm index` to regenerate it. A
+conflict in a document is real and is resolved by hand first; `rkm index`
+refuses until it is, and `rkm check` reports any conflict markers left.
 
 Manage the knowledge checkout through the CLI:
 
@@ -259,8 +265,9 @@ rkm commit --summary "clarify grammar" --kind spec # choose the scope explicitly
 rkm commit -m "TEAM-123 docs(spec): clarify grammar" # complete message, passed unchanged
 ```
 
-Changes to the generated index/log do not affect inferred kinds. Mixed kinds,
-configuration changes, or changes that cannot be classified use `rkm`.
+Changes to the generated index, or to an older `log.md`, do not affect
+inferred kinds. Mixed kinds, configuration changes, or changes that cannot be
+classified use `rkm`.
 The summary is a single line; complete `-m` messages may include bodies and
 trailers. `--kind` is only used with `--summary`.
 

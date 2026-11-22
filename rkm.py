@@ -321,6 +321,8 @@ BARE = re.compile(r"^[A-Za-z0-9][\w.+-]*$")
 # repo:org/name). Either is a lower-case prefix, a colon and no spaces.
 ORIGIN = re.compile(r"^[a-z][a-z0-9+.-]*:\S+$")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+# Git and jj conflict markers at the start of a line.
+CONFLICT = re.compile(r"^(<<<<<<< |>>>>>>> |%%%%%%% )", re.M)
 
 
 class Fail(Exception):
@@ -727,7 +729,7 @@ def enable_branch(a, migrate=False):
                 path = os.path.join(d, name)
                 try:
                     with open(path, encoding="utf-8") as f:
-                        if re.search(r"^(<<<<<<< |>>>>>>> |%%%%%%% )", f.read(), re.M):
+                        if CONFLICT.search(f.read()):
                             raise Fail(f"resolve conflict markers in {path} before migrating")
                 except UnicodeDecodeError:
                     pass
@@ -1034,25 +1036,6 @@ def describe(description):
     return d
 
 
-def log(kind, doc, note=None):
-    log_entry(f"* **{kind}**: [{doc.get('title') or doc.id}]({doc.rel})"
-              + (f": {note}" if note else "") + f" ({actor()})")
-
-
-def log_entry(entry):
-    path = os.path.join(BUNDLE, "log.md")
-    lines = open(path, encoding="utf-8").read().splitlines() if os.path.exists(path) else ["# Update log", ""]
-    day = now()[:10]
-    heads = [i for i, l in enumerate(lines) if l.startswith("## ")]
-    if heads and lines[heads[0]] == f"## {day}":
-        lines.insert(heads[0] + 2, entry)
-    else:
-        at = heads[0] if heads else len(lines)
-        lines[at:at] = [f"## {day}", "", entry, ""]
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines).rstrip("\n") + "\n")
-
-
 # --- index ------------------------------------------------------------------
 
 def section_of(d):
@@ -1244,7 +1227,6 @@ def cmd_new(a):
         doc.set("from", [source])
     doc.set("generated", generated)
     doc.save()
-    log("Creation", doc, f"via {source}" if source else None)
     write_index()
     print(path if BRANCH else bundle_rel(path))
 
@@ -1309,9 +1291,6 @@ def cmd_adopt(a):
     if source:
         doc.set("from", [source])
     doc.save()
-    note = "; ".join(n for n in (f"from {src}" if outside else None,
-                                 f"via {source}" if source else None) if n)
-    log("Adoption", doc, note or None)
     write_index()
 
 
@@ -1326,13 +1305,13 @@ def cmd_close(a):
     if doc.get("state") == "done":
         raise Fail(f"{doc.id} is already done")
     doc.set("state", "done")
-    doc.set("closed", stamp())
+    doc.set("closed", stamp() | ({"note": a.note} if a.note else {}))
     doc.save()
-    log("Closure", doc, a.note)
     write_index()
 
 
 def cmd_reopen(a):
+    actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
     tracked(doc)
     if doc.get("state") != "done":
@@ -1340,11 +1319,11 @@ def cmd_reopen(a):
     doc.set("state", "open")
     doc.set("closed", None)
     doc.save()
-    log("Reopening", doc, a.note)
     write_index()
 
 
 def cmd_state(a):
+    actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
     tracked(doc)
     allowed = states_of(doc.get("type"))
@@ -1358,11 +1337,11 @@ def cmd_state(a):
         raise Fail(f"{doc.id} is already {a.state}")
     doc.set("state", a.state)
     doc.save()
-    log("Update", doc, f"state {a.state}" + (f": {a.note}" if a.note else ""))
     write_index()
 
 
 def cmd_retype(a):
+    actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
     new = KINDS[a.kind][0] if a.kind in KINDS else a.kind
     if new not in TYPES:
@@ -1375,15 +1354,14 @@ def cmd_retype(a):
         doc.set("state", None)
         doc.set("closed", None)
     doc.save()
-    log("Update", doc, f"{old} → {new}")
     write_index()
 
 
 def cmd_status(a):
+    actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
     doc.set("status", None if a.status == "stable" else a.status)
     doc.save()
-    log("Deprecation" if a.status == "deprecated" else "Update", doc, f"status {a.status}")
     write_index()
 
 
@@ -1411,12 +1389,11 @@ def cmd_touch(a):
     doc = resolve(a.id)
     doc.set("generated", stamp())
     doc.save()
-    log("Update", doc, a.note)
 
 
 def cmd_from(a):
     """Record one more place that asked for an item. The body is unchanged,
-    so `generated` is not restamped; the log dates the request."""
+    so `generated` is not restamped; the commit dates the request."""
     origin(a.origin)
     actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
@@ -1426,7 +1403,6 @@ def cmd_from(a):
         return
     doc.set("from", seen + [a.origin])
     doc.save()
-    log("Request", doc, f"via {a.origin}")
 
 
 def cmd_verify(a):
@@ -1442,7 +1418,6 @@ def cmd_verify(a):
     v = [x for x in v if x.get("by") != who] + [{"by": who, "at": now()}]
     doc.set("verified", v)
     doc.save()
-    log("Verification", doc)
 
 
 def move_file(old, new):
@@ -1469,6 +1444,7 @@ def move_file(old, new):
 
 
 def cmd_mv(a):
+    actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
     dest_id = a.new[:-3] if a.new.endswith(".md") else a.new
     if dest_id.startswith("rkm/"):
@@ -1481,8 +1457,6 @@ def cmd_mv(a):
     if os.path.exists(dest):
         raise Fail(f"{dest_id} exists")
     new = move_file(bundle_rel(doc.path), bundle_rel(dest))
-    moved = Doc(dest)
-    log("Update", moved, f"moved from {doc.id}")
     write_index()
     print(dest if BRANCH else new)
 
@@ -1505,12 +1479,12 @@ def inbound(target):
 
 
 def cmd_rm(a):
+    actor()  # refuses a bad actor before anything is written
     doc = resolve(a.id)
     rel = bundle_rel(doc.path)
     hits = inbound(rel)
     if hits:
         raise Fail(f"{doc.id} is still linked from: " + ", ".join(hits))
-    log("Deletion", doc, a.note)
     os.remove(doc.path)
     write_index()
 
@@ -1551,13 +1525,35 @@ def cmd_ls(a):
         print(f"{hidden} closed or deprecated hidden; --all shows them", file=sys.stderr)
 
 
+def conflicted():
+    """Bundle files, relative to it, that hold conflict markers."""
+    for d, dirs, files in os.walk(BUNDLE):
+        dirs[:] = sorted(x for x in dirs if not x.startswith("."))
+        for f in sorted(files):
+            path = os.path.join(d, f)
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    if CONFLICT.search(fh.read()):
+                        yield os.path.relpath(path, BUNDLE)
+            except (UnicodeDecodeError, OSError):
+                pass
+
+
 def cmd_index(a):
+    # index.md is generated, so regenerating it resolves its conflicts; the
+    # files it is generated from must be resolved first, or it would drop them.
+    sources = [f for f in conflicted() if f not in RESERVED]
+    if sources:
+        raise Fail("resolve the conflicts in " + ", ".join(sources) + " first; the index is built from them")
     write_index()
 
 
 def problems():
     out = []
     docs = []
+    stuck = list(conflicted())
+    for f in stuck:
+        out.append(f"{f}: conflict markers; " + ("run `rkm index`" if f == "index.md" else "resolve them"))
     for p in concept_paths():
         rel = os.path.relpath(p, BUNDLE)
         try:
@@ -1599,6 +1595,8 @@ def problems():
                 if not isinstance(v, dict) or not ACTOR.match(str(v.get("by", ""))) \
                         or not TIMESTAMP.match(str(v.get("at", ""))):
                     bad(f"`{k}` must be {{ by: <actor>, at: <ISO 8601 with offset> }}")
+                elif k == "closed" and not isinstance(v.get("note", ""), str):
+                    bad("`closed` note must be text")
         if "to" in d.values:
             v = d.get("to")
             if not isinstance(v, str) or not ORIGIN.match(v) or "://" in v:
@@ -1631,7 +1629,8 @@ def problems():
             if (target == "rkm" or target.startswith("rkm/")) and not os.path.exists(repo_path(target)):
                 out.append(f"{f}: broken link to {t}")
     index = os.path.join(BUNDLE, "index.md")
-    if not os.path.exists(index) or open(index, encoding="utf-8").read() != render_index(docs):
+    if "index.md" not in stuck and (not os.path.exists(index)
+                                    or open(index, encoding="utf-8").read() != render_index(docs)):
         out.append(f"index.md: out of date; run `rkm index`")
     logp = os.path.join(BUNDLE, "log.md")
     if os.path.exists(logp):
@@ -1668,7 +1667,8 @@ knowledge management), listed in [rkm/index.md](rkm/index.md):
 `rkm/` is an [Open Knowledge Format v0.2]({okf})
 bundle: every file opens with frontmatter (`type`, `title`, usually `description`,
 `state` for todos and bugs, and who wrote and reviewed it), `rkm/index.md` lists
-them, and `rkm/log.md` records each change. `rkm/config.toml` says which types
+them, and version control records each change. rkm no longer writes `rkm/log.md`;
+an older one is kept as history. `rkm/config.toml` says which types
 the bundle uses beyond rkm's defaults, which trees rkm leaves alone, and the
 oldest rkm it works with (`requires`).
 
@@ -1677,7 +1677,7 @@ one; install it with `uv tool install <rkm repository>` and update it with
 `uv tool upgrade rkm`. `rkm --version` says which you have.
 
 **Change it only through `rkm`.** Don't create, rename, move or delete
-files in `rkm/`, and don't edit their frontmatter, `index.md` or `log.md`, by
+files in `rkm/`, and don't edit their frontmatter or `index.md` by
 hand. Edit a file's body by hand. Set `RKM_ACTOR` to yourself first; an agent
 that doesn't is refused.
 
@@ -1686,7 +1686,7 @@ export RKM_ACTOR=claude/opus-5.5          # <agent>/<model>
 rkm new todo --title "Regex engine swap" --description "One sentence."  # todos/regex-engine-swap
 rkm new bug  lsp-crash-on-empty  --title "…" --description "…"   # Repro / Expected / Actual
 rkm new decision closed-by-default --title "…" --description "…"  # numbered, dated
-rkm close regex-engine-swap --note "landed in feat/regex"
+rkm close regex-engine-swap --note "landed in feat/regex"  # the note is kept in `closed`
 rkm retype regex-engine-swap bug  # the file stays where it is
 rkm touch <id>                    # after rewriting a body: stamps `generated`
 rkm new todo --title "…" --description "…" --from https://…  # asked for elsewhere
@@ -1700,6 +1700,7 @@ rkm rm <id>                       # refused while anything links to it
 rkm adopt <path> <kind> --description "…"  # a file that arrived without frontmatter
 rkm adopt notes/x.md process --description "…"   # moves it in from outside rkm/, rewriting links
 rkm ls --type bug                 # current only; --all adds closed and deprecated
+rkm index                         # regenerates index.md, resolving its conflicts
 rkm check                         # conformance: frontmatter, links, index
 ```
 
@@ -1718,6 +1719,10 @@ rkm check                         # conformance: frontmatter, links, index
   label. Its state is `open` until it has been put to them, then `asked`,
   then `done` on `rkm close`, with a note saying whether it was delivered or
   declined. Links to their issue, todo or PR go in the body.
+- **After merging knowledge from another clone**, run `rkm index`: `index.md`
+  is generated, so regenerating it resolves its conflicts. A conflict in a
+  document is real; resolve it by hand first, and `rkm index` refuses until
+  you do. `rkm check` reports any conflict markers left.
 - **An agent always writes a `description`.** It is the index line the next
   reader chooses by. A person may leave it out; rkm refuses that from an agent.
 - Link between files with relative links, not `/`-rooted ones, so they work on
@@ -1929,7 +1934,7 @@ def update_agents():
 
 
 def initialize_bundle(a):
-    who = actor()  # refuses a bad actor before anything is written
+    actor()  # refuses a bad actor before anything is written
     os.makedirs(BUNDLE, exist_ok=True)
     minor = ".".join(VERSION.split(".")[:2])
     with open(os.path.join(BUNDLE, "config.toml"), "w", encoding="utf-8") as f:
@@ -1937,7 +1942,6 @@ def initialize_bundle(a):
                 f"name = {json.dumps(a.name or os.path.basename(REPO))}\n"
                 f'requires = "{minor}"\n')
     configure_bundle()
-    log_entry(f"* **Initialization**: Created rkm/ with rkm {VERSION} ({who})")
     write_index()
 
 
@@ -2015,15 +2019,17 @@ def main(argv=None):
     p.add_argument("--from", dest="from_", metavar="ORIGIN",
                    help="where it was asked for: a link, or a label like app:slack")
     p.set_defaults(fn=cmd_adopt)
-    for name, fn in (("close", cmd_close), ("reopen", cmd_reopen), ("touch", cmd_touch)):
+    p = sub.add_parser("close")
+    p.add_argument("id")
+    p.add_argument("--note", help="kept in `closed`, e.g. the commit or change that did it")
+    p.set_defaults(fn=cmd_close)
+    for name, fn in (("reopen", cmd_reopen), ("touch", cmd_touch)):
         p = sub.add_parser(name)
         p.add_argument("id")
-        p.add_argument("--note")
         p.set_defaults(fn=fn)
     p = sub.add_parser("state", help="move an item to a state between open and done")
     p.add_argument("id")
     p.add_argument("state")
-    p.add_argument("--note")
     p.set_defaults(fn=cmd_state)
     p = sub.add_parser("from", help="record another place that asked for an item")
     p.add_argument("id")
@@ -2051,7 +2057,6 @@ def main(argv=None):
     p.set_defaults(fn=cmd_mv)
     p = sub.add_parser("rm")
     p.add_argument("id")
-    p.add_argument("--note")
     p.set_defaults(fn=cmd_rm)
     p = sub.add_parser("ls")
     p.add_argument("--type")

@@ -88,7 +88,7 @@ if sys.version_info < (3, 11):
 
 import tomllib  # noqa: E402  (3.11+)
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def has_bundle(d):

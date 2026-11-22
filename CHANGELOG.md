@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-11-22
 
 Merging
 
@@ -18,6 +18,15 @@ Merging
   another bundle file still has conflicts, rather than build an index that
   leaves out that document.
 - `rkm check` reports conflict markers in any bundle file.
+
+Upgrading
+
+- Nothing in a bundle needs converting. Once everyone has upgraded, raise
+  `requires` to `"0.4"` in `rkm/config.toml`, so an older rkm refuses the
+  bundle instead of adding to `log.md` again, and delete `rkm/log.md` if you
+  don't want a log that stops at the upgrade.
+- Drop `--note` from scripts that pass it to `reopen`, `state`, `touch` or
+  `rm`.
 
 ## 0.3.0 — 2026-10-17
 
